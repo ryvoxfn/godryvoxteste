@@ -178,7 +178,7 @@ function desenharRotaOtima(drop){
         fillOpacity:1
     }).addTo(map);
 
-    // 🔵 mergulho (AGORA CORRIGIDO)
+    // 🔵 mergulho (INTELIGENTE)
     let mergulho = calcularPontoMergulho(drop, p);
 
     pontoMergulho = L.circleMarker([mergulho.lat, mergulho.lng], {
@@ -189,7 +189,7 @@ function desenharRotaOtima(drop){
     }).addTo(map);
 }
 
-// ================= MERGULHO CORRIGIDO =================
+// ================= MERGULHO INTELIGENTE =================
 
 function calcularPontoMergulho(drop, pontoPulo){
 
@@ -203,7 +203,7 @@ function calcularPontoMergulho(drop, pontoPulo){
     let nx = dx / distTotal;
     let ny = dy / distTotal;
 
-    // física
+    // física base
     let altura = 1000;
     let alturaGlider = 300;
 
@@ -211,14 +211,33 @@ function calcularPontoMergulho(drop, pontoPulo){
     let velGlider = 22;
 
     let tempoQueda = (altura - alturaGlider) / velQueda;
-
     let distQueda = tempoQueda * velQueda;
 
     let distPlanar = Math.max(0, distTotal - distQueda);
 
+    // =========================
+    // AJUSTE DINÂMICO
+    // =========================
+
+    let ajuste = 0;
+
+    if(distTotal > 1200){
+        ajuste = 120;
+    } else if(distTotal > 800){
+        ajuste = 90;
+    } else if(distTotal > 500){
+        ajuste = 60;
+    } else {
+        ajuste = 40;
+    }
+
+    let fatorTerreno = 0.85;
+
+    let distFinal = (distPlanar * fatorTerreno) + ajuste;
+
     return {
-        lat: drop.lat - (nx * distPlanar),
-        lng: drop.lng - (ny * distPlanar)
+        lat: drop.lat - (nx * distFinal),
+        lng: drop.lng - (ny * distFinal)
     };
 }
 
