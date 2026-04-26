@@ -21,91 +21,67 @@ h1{
 
 #map{
     height:75vh;
-    background:black;
 }
 
 .panel{
-    padding:15px;
     text-align:center;
+    padding:10px;
 }
 
-.result{
-    margin-top:10px;
-    font-size:16px;
+button{
+    padding:10px 15px;
+    margin:5px;
+    border:none;
+    border-radius:6px;
+    background:#00ffcc;
+    cursor:pointer;
+    font-weight:bold;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🎯 Drop Calculator PRO (Fortnite)</h1>
+<h1>🎯 Drop Calculator PRO</h1>
 
 <div id="map"></div>
 
 <div class="panel">
-    <div class="result" id="resultado"></div>
+    <button onclick="toggleBusMode()">✈️ Definir rota</button>
+    <button onclick="animarOnibus()">▶️ Iniciar ônibus</button>
+    <div id="resultado"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-polylinedecorator/dist/leaflet.polylineDecorator.js"></script>
 
 <script>
 
-// =======================
-// CONFIG MAPA REAL
-// =======================
-
-let mapWidth = 2048;
-let mapHeight = 2048;
-
+// ================= MAPA =================
 let map = L.map('map', {
     crs: L.CRS.Simple,
-    minZoom: -2,
-    maxZoom: 2
+    minZoom:-2,
+    maxZoom:2
 });
 
-// SUA IMAGEM LOCAL
-let imageUrl = "mapa.jpg";
-
-let bounds = [[0,0], [mapHeight, mapWidth]];
-L.imageOverlay(imageUrl, bounds).addTo(map);
-
+let bounds = [[0,0],[2048,2048]];
+L.imageOverlay("mapa.jpg", bounds).addTo(map);
 map.fitBounds(bounds);
 
-// =======================
-// ÔNIBUS (rota exemplo)
-// =======================
-
-let busStart = [200, 1800];
-let busEnd = [1800, 200];
-
-let busLine = L.polyline([busStart, busEnd], {
-    color:'cyan',
-    weight:3
-}).addTo(map);
-
-// =======================
-// DROP
-// =======================
+// ================= VARIÁVEIS =================
+let busStart = null;
+let busEnd = null;
+let busLine = null;
+let decorator = null;
 
 let markerDrop = null;
+let modoOnibus = false;
 
-map.on('click', function(e){
+let busMarker = null;
+let busProgress = 0;
+let animando = false;
 
-    console.log("Coord:", e.latlng); // ajuda pra ajustar POIs
-
-    if(markerDrop) map.removeLayer(markerDrop);
-
-    markerDrop = L.marker(e.latlng).addTo(map)
-        .bindPopup("📍 Drop escolhido")
-        .openPopup();
-
-    calcular();
-});
-
-// =======================
-// POIs MELHORADOS
-// =======================
-
+// ================= POIs =================
 let pois = [
     {nome:"Brutal Bastion", x:1000, y:400, tipo:"perigo"},
     {nome:"Frenzy Fields", x:1000, y:1200, tipo:"loot"},
@@ -115,118 +91,172 @@ let pois = [
     {nome:"Lonely Labs", x:1700, y:300, tipo:"perigo"}
 ];
 
-function corPOI(tipo){
-    if(tipo === "cidade") return "#00ffcc";
-    if(tipo === "loot") return "#ffd700";
-    if(tipo === "perigo") return "#ff4d4d";
-    return "#ffffff";
+function corPOI(t){
+    return t=="cidade"?"#00ffcc":t=="loot"?"#ffd700":"#ff4d4d";
 }
 
-pois.forEach(p => {
-
-    let cor = corPOI(p.tipo);
-
-    let marker = L.marker([p.x, p.y], {
-        icon: L.divIcon({
-            html: `
-                <div style="
-                    background: rgba(0,0,0,0.6);
-                    border: 1px solid ${cor};
-                    padding:4px 8px;
-                    border-radius:8px;
-                    color:${cor};
-                    font-weight:bold;
-                    font-size:13px;
-                    text-align:center;
-                    transition:0.2s;
-                "
-                onmouseover="this.style.transform='scale(1.1)'"
-                onmouseout="this.style.transform='scale(1)'"
-                >
-                    ${p.nome}
-                </div>
-            `,
-            iconSize: [120, 30]
+pois.forEach(p=>{
+    let marker = L.marker([p.x,p.y],{
+        icon:L.divIcon({
+            html:`<div style="background:#0008;border:1px solid ${corPOI(p.tipo)};
+            padding:4px;border-radius:6px;color:${corPOI(p.tipo)}">${p.nome}</div>`
         })
     }).addTo(map);
 
-    marker.on('click', function(){
-
-        if(markerDrop) map.removeLayer(markerDrop);
-
-        markerDrop = L.marker([p.x, p.y]).addTo(map)
-            .bindPopup("🎯 Drop: " + p.nome)
-            .openPopup();
-
-        calcular();
+    marker.on('click',()=>{
+        setDrop([p.x,p.y], p.nome);
     });
-
 });
 
-// =======================
-// FUNÇÕES
-// =======================
+// ================= CLIQUE =================
+map.on('click', e=>{
+
+    if(modoOnibus){
+
+        if(!busStart){
+            busStart=[e.latlng.lat,e.latlng.lng];
+            L.marker(busStart).addTo(map).bindPopup("Início").openPopup();
+        }else{
+            busEnd=[e.latlng.lat,e.latlng.lng];
+            L.marker(busEnd).addTo(map).bindPopup("Fim").openPopup();
+            desenharLinha();
+            modoOnibus=false;
+        }
+        return;
+    }
+
+    setDrop([e.latlng.lat,e.latlng.lng], "Drop escolhido");
+});
+
+// ================= FUNÇÕES =================
+
+function setDrop(coord,nome){
+    if(markerDrop) map.removeLayer(markerDrop);
+
+    markerDrop = L.marker(coord).addTo(map)
+        .bindPopup(nome).openPopup();
+
+    calcular();
+}
+
+function toggleBusMode(){
+    modoOnibus = true;
+    busStart=null;
+    busEnd=null;
+
+    if(busLine) map.removeLayer(busLine);
+    if(decorator) map.removeLayer(decorator);
+
+    alert("Clique em 2 pontos para definir a rota");
+}
+
+function desenharLinha(){
+
+    if(busLine) map.removeLayer(busLine);
+    if(decorator) map.removeLayer(decorator);
+
+    busLine = L.polyline([busStart,busEnd],{
+        color:'cyan',weight:3
+    }).addTo(map);
+
+    decorator = L.polylineDecorator(busLine,{
+        patterns:[{
+            offset:'5%',
+            repeat:'10%',
+            symbol:L.Symbol.arrowHead({
+                pixelSize:10,
+                pathOptions:{color:'white'}
+            })
+        }]
+    }).addTo(map);
+}
+
+// ================= ANIMAÇÃO =================
+
+function animarOnibus(){
+
+    if(!busStart||!busEnd){
+        alert("Defina a rota primeiro!");
+        return;
+    }
+
+    if(busMarker) map.removeLayer(busMarker);
+
+    busProgress=0;
+    animando=true;
+
+    busMarker = L.circleMarker(busStart,{
+        radius:8,
+        color:'white',
+        fillColor:'cyan',
+        fillOpacity:1
+    }).addTo(map);
+
+    function mover(){
+
+        if(!animando) return;
+
+        busProgress += 0.002;
+
+        if(busProgress>1){
+            animando=false;
+            return;
+        }
+
+        let lat = busStart[0] + (busEnd[0]-busStart[0])*busProgress;
+        let lng = busStart[1] + (busEnd[1]-busStart[1])*busProgress;
+
+        busMarker.setLatLng([lat,lng]);
+
+        requestAnimationFrame(mover);
+    }
+
+    mover();
+}
+
+// ================= CÁLCULO =================
 
 function distancia(a,b){
-    let dx = a.lat - b.lat;
-    let dy = a.lng - b.lng;
-    return Math.sqrt(dx*dx + dy*dy);
+    let dx=a.lat-b.lat;
+    let dy=a.lng-b.lng;
+    return Math.sqrt(dx*dx+dy*dy);
 }
 
 function pontoMaisProximo(p,a,b){
 
-    let apx = p.lat - a[0];
-    let apy = p.lng - a[1];
+    let apx=p.lat-a[0], apy=p.lng-a[1];
+    let abx=b[0]-a[0], aby=b[1]-a[1];
 
-    let abx = b[0] - a[0];
-    let aby = b[1] - a[1];
+    let t=(apx*abx+apy*aby)/(abx*abx+aby*aby);
+    t=Math.max(0,Math.min(1,t));
 
-    let ab2 = abx*abx + aby*aby;
-    let ap_ab = apx*abx + apy*aby;
-
-    let t = Math.max(0, Math.min(1, ap_ab / ab2));
-
-    return {
-        lat: a[0] + abx*t,
-        lng: a[1] + aby*t
-    };
+    return {lat:a[0]+abx*t,lng:a[1]+aby*t};
 }
-
-// =======================
-// CÁLCULO
-// =======================
 
 function calcular(){
 
-    if(!markerDrop) return;
+    if(!markerDrop||!busStart||!busEnd) return;
 
-    let drop = markerDrop.getLatLng();
-    let p = pontoMaisProximo(drop, busStart, busEnd);
+    let drop=markerDrop.getLatLng();
+    let p=pontoMaisProximo(drop,busStart,busEnd);
 
-    let escala = 2.5;
-    let dist = distancia(drop, p) * escala;
+    let escala=2.5;
+    let dist=distancia(drop,p)*escala;
 
-    let velQueda = 65;
-    let velGlider = 22;
-    let altura = 1000;
-    let alturaGlider = 300;
+    let tempoQueda= (1000-300)/65;
+    let restante=Math.max(0,dist-(tempoQueda*65));
+    let tempoGlider=restante/22;
 
-    let tempoQueda = (altura - alturaGlider) / velQueda;
-    let restante = Math.max(0, dist - (tempoQueda * velQueda));
-    let tempoGlider = restante / velGlider;
+    let tempoTotal=tempoQueda+tempoGlider;
 
-    let tempoTotal = tempoQueda + tempoGlider;
+    let distBus=distancia({lat:busStart[0],lng:busStart[1]},p)*escala;
+    let tempoOnibus=distBus/30;
 
-    let distBus = distancia({lat:busStart[0], lng:busStart[1]}, p) * escala;
-    let velBus = 30;
-
-    let tempoOnibus = distBus / velBus;
-
-    document.getElementById("resultado").innerHTML =
-        "📏 Distância: " + dist.toFixed(0) + "m<br>" +
-        "⏱️ Tempo queda: " + tempoTotal.toFixed(2) + "s<br>" +
-        "✈️ Tempo ônibus: " + tempoOnibus.toFixed(2) + "s<br><br>" +
-        "🎯 Pule em: " + tempoOnibus.toFixed(2) + "s";
+    document.getElementById("resultado").innerHTML=
+        `📏 Distância: ${dist.toFixed(0)}m<br>
+         ⏱️ Tempo queda: ${tempoTotal.toFixed(2)}s<br>
+         ✈️ Tempo ônibus: ${tempoOnibus.toFixed(2)}s<br><br>
+         🎯 Pule em: ${tempoOnibus.toFixed(2)}s`;
 }
 
 </script>
