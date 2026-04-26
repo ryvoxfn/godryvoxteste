@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calculator PRO (REAL HEIGHT)</title>
+<title>Drop Calculator PRO (REAL GOD SYSTEM)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -22,7 +22,7 @@ button{
 
 <body>
 
-<h1>🎯 Drop Calculator PRO (REAL HEIGHT SYSTEM)</h1>
+<h1>🎯 Drop Calculator PRO (REAL GOD SYSTEM)</h1>
 
 <div id="map"></div>
 
@@ -43,29 +43,28 @@ L.imageOverlay("mapa.jpg",bounds).addTo(map);
 map.fitBounds(bounds);
 
 // ================= HEIGHTMAP =================
-let heightCanvas = document.createElement("canvas");
-let ctx = heightCanvas.getContext("2d");
-let heightLoaded = false;
+let canvas = document.createElement("canvas");
+let ctx = canvas.getContext("2d");
+let loaded=false;
 
 let img = new Image();
-img.src = "heightmap.png";
+img.src="heightmap.png";
 
-img.onload = () => {
-    heightCanvas.width = img.width;
-    heightCanvas.height = img.height;
+img.onload=()=>{
+    canvas.width=img.width;
+    canvas.height=img.height;
     ctx.drawImage(img,0,0);
-    heightLoaded = true;
+    loaded=true;
 };
 
-// pega altura real
 function getAltura(lat,lng){
-    if(!heightLoaded) return 0.5;
+    if(!loaded) return 0.5;
 
-    let x = Math.floor((lng/2048)*heightCanvas.width);
-    let y = Math.floor((lat/2048)*heightCanvas.height);
+    let x=Math.floor((lng/2048)*canvas.width);
+    let y=Math.floor((lat/2048)*canvas.height);
 
-    let pixel = ctx.getImageData(x,y,1,1).data[0];
-    return pixel/255;
+    let p=ctx.getImageData(x,y,1,1).data[0];
+    return p/255;
 }
 
 // ================= VAR =================
@@ -134,7 +133,7 @@ function desenharRota(drop){
 
     pontoPulo=L.circleMarker([p.lat,p.lng],{radius:6,color:'red'}).addTo(map);
 
-    let mergulho=calcularMergulhoReal(drop,p);
+    let mergulho=calcularMergulhoREAL(drop,p);
 
     pontoMergulho=L.circleMarker([mergulho.lat,mergulho.lng],{
         radius:7,color:'blue'
@@ -143,33 +142,50 @@ function desenharRota(drop){
     calcularTempo(drop,p,mergulho);
 }
 
-// ================= MERGULHO REAL =================
-function calcularMergulhoReal(drop,p){
+// ================= MERGULHO REAL (SIMULAÇÃO) =================
+function calcularMergulhoREAL(drop,p){
 
-    let dx=drop.lat-p.lat;
-    let dy=drop.lng-p.lng;
-    let dist=Math.sqrt(dx*dx+dy*dy);
+    let steps=80;
 
-    let nx=dx/dist;
-    let ny=dy/dist;
+    let melhor=null;
+    let melhorErro=999999;
 
-    // altura real
-    let altDrop=getAltura(drop.lat,drop.lng);
-    let altPulo=getAltura(p.lat,p.lng);
+    for(let i=0;i<=steps;i++){
 
-    let diffAlt=altDrop-altPulo;
+        let t=i/steps;
 
-    // ajuste REAL
-    let fator=0.85 - (diffAlt*0.5);
+        let lat=p.lat + (drop.lat-p.lat)*t;
+        let lng=p.lng + (drop.lng-p.lng)*t;
 
-    fator=Math.max(0.4,Math.min(1,fator));
+        let tempoQueda = simularQueda(lat,lng,drop);
 
-    let distFinal=dist*fator;
+        let erro = Math.abs(tempoQueda);
 
-    return {
-        lat:drop.lat - nx*distFinal,
-        lng:drop.lng - ny*distFinal
-    };
+        if(erro<melhorErro){
+            melhorErro=erro;
+            melhor={lat,lng};
+        }
+    }
+
+    return melhor;
+}
+
+// ================= SIMULA QUEDA =================
+function simularQueda(lat,lng,drop){
+
+    let alturaInicial=1000;
+    let vel=65;
+
+    let dx=drop.lat-lat;
+    let dy=drop.lng-lng;
+
+    let dist=Math.sqrt(dx*dx+dy*dy)*2.5;
+
+    let tempoQueda=alturaInicial/vel;
+
+    let distanciaQueda=tempoQueda*vel;
+
+    return dist - distanciaQueda;
 }
 
 // ================= TEMPO =================
@@ -179,12 +195,7 @@ function calcularTempo(drop,p,mergulho){
 
     let distTotal=distancia(drop,p)*escala;
 
-    let alturaDrop=getAltura(drop.lat,drop.lng);
-
-    let alturaReal=1000 + (alturaDrop*500);
-
-    let tempoQueda=(alturaReal-300)/65;
-
+    let tempoQueda=(1000)/65;
     let restante=Math.max(0,distTotal-(tempoQueda*65));
     let tempoGlider=restante/22;
 
