@@ -2,80 +2,56 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calculator PRO (GOD REAL)</title>
+<title>Drop Calculator (Base)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;background:#0b0f1a;color:white;font-family:Arial;}
 h1{text-align:center;padding:10px;}
-#map{height:75vh;}
+#map{height:80vh;}
 .panel{text-align:center;padding:10px;}
 button{
     padding:10px;margin:5px;
     background:#00ffcc;border:none;
-    border-radius:6px;cursor:pointer;
-    font-weight:bold;
+    border-radius:6px;
+    cursor:pointer;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🎯 Drop Calculator PRO (GOD REAL)</h1>
+<h1>🎯 Drop Calculator (Base)</h1>
 
 <div id="map"></div>
 
 <div class="panel">
-    <button onclick="toggleBusMode()">✈️ Definir rota</button>
-    <div id="resultado"></div>
+    <button onclick="ativarModoOnibus()">Definir rota do ônibus</button>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-polylinedecorator/dist/leaflet.polylineDecorator.js"></script>
 
 <script>
 
-// ================= MAP =================
+// ================= MAPA =================
 let map = L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:2});
 let bounds=[[0,0],[2048,2048]];
 L.imageOverlay("mapa.jpg",bounds).addTo(map);
 map.fitBounds(bounds);
 
-// ================= HEIGHTMAP =================
-let canvas = document.createElement("canvas");
-let ctx = canvas.getContext("2d");
-let loaded=false;
-
-let img = new Image();
-img.src="heightmap.png";
-
-img.onload=()=>{
-    canvas.width=img.width;
-    canvas.height=img.height;
-    ctx.drawImage(img,0,0);
-    loaded=true;
-};
-
-function getAltura(lat,lng){
-    if(!loaded) return 0.5;
-
-    let x=Math.floor((lng/2048)*canvas.width);
-    let y=Math.floor((lat/2048)*canvas.height);
-
-    let p=ctx.getImageData(x,y,1,1).data[0];
-    return p/255;
-}
-
 // ================= VAR =================
-let busStart=null,busEnd=null;
-let busLine=null,decorator=null;
-let markerDrop=null,linhaOtima=null;
-let pontoPulo=null,pontoMergulho=null;
+let busStart=null, busEnd=null;
 let modoOnibus=false;
+
+let markerDrop=null;
+let pontoPulo=null;
+let pontoMergulho=null;
+let linha=null;
 
 // ================= CLICK =================
 map.on('click', e=>{
+
     if(modoOnibus){
         if(!busStart){
             busStart=[e.latlng.lat,e.latlng.lng];
@@ -83,153 +59,103 @@ map.on('click', e=>{
         }else{
             busEnd=[e.latlng.lat,e.latlng.lng];
             L.marker(busEnd).addTo(map);
-            desenharLinha();
+
+            L.polyline([busStart,busEnd],{
+                color:'cyan'
+            }).addTo(map);
+
             modoOnibus=false;
         }
         return;
     }
+
     setDrop(e.latlng);
 });
 
 // ================= BUS =================
-function toggleBusMode(){
+function ativarModoOnibus(){
     modoOnibus=true;
-    busStart=null;busEnd=null;
-
-    if(busLine) map.removeLayer(busLine);
-    if(decorator) map.removeLayer(decorator);
-}
-
-function desenharLinha(){
-    busLine=L.polyline([busStart,busEnd],{color:'cyan'}).addTo(map);
-
-    decorator=L.polylineDecorator(busLine,{
-        patterns:[{
-            offset:'5%',
-            repeat:'10%',
-            symbol:L.Symbol.arrowHead({
-                pixelSize:10,
-                pathOptions:{color:'white'}
-            })
-        }]
-    }).addTo(map);
+    busStart=null;
+    busEnd=null;
 }
 
 // ================= DROP =================
 function setDrop(latlng){
+
     if(markerDrop) map.removeLayer(markerDrop);
     markerDrop=L.marker(latlng).addTo(map);
-    desenharRota(latlng);
+
+    calcularRota(latlng);
 }
 
-// ================= ROTA =================
-function desenharRota(drop){
+// ================= LÓGICA PRINCIPAL =================
+function calcularRota(drop){
 
-    if(!busStart || !busEnd) return;
+    let p = pontoMaisProximo(drop,busStart,busEnd);
 
-    let p=pontoMaisProximo(drop,busStart,busEnd);
-
-    if(linhaOtima) map.removeLayer(linhaOtima);
     if(pontoPulo) map.removeLayer(pontoPulo);
     if(pontoMergulho) map.removeLayer(pontoMergulho);
+    if(linha) map.removeLayer(linha);
 
-    linhaOtima=L.polyline([[p.lat,p.lng],[drop.lat,drop.lng]],{
-        color:'lime',dashArray:'8,8'
+    // 🔴 ponto de pulo
+    pontoPulo = L.circleMarker([p.lat,p.lng],{
+        radius:6,color:'red'
     }).addTo(map);
 
-    pontoPulo=L.circleMarker([p.lat,p.lng],{
-        radius:6,color:'red',fillColor:'red',fillOpacity:1
+    // 🔵 ponto de mergulho (base)
+    let mergulho = calcularMergulho(drop,p);
+
+    pontoMergulho = L.circleMarker([mergulho.lat,mergulho.lng],{
+        radius:7,color:'blue'
     }).addTo(map);
 
-    let mergulho=calcularMergulhoREAL(drop,p);
-
-    pontoMergulho=L.circleMarker([mergulho.lat,mergulho.lng],{
-        radius:7,color:'blue',fillColor:'blue',fillOpacity:1
+    // linha visual
+    linha = L.polyline([
+        [p.lat,p.lng],
+        [drop.lat,drop.lng]
+    ],{
+        color:'lime',
+        dashArray:'6,6'
     }).addTo(map);
-
-    calcularTempo(drop,p);
 }
 
-// ================= MERGULHO REAL =================
-function calcularMergulhoREAL(drop, p){
+// ================= MERGULHO BASE =================
+function calcularMergulho(drop,p){
 
-    let melhor = null;
-    let menorErro = Infinity;
+    let dx = drop.lat - p.lat;
+    let dy = drop.lng - p.lng;
 
-    let alturaInicial = 1000;
+    let dist = Math.sqrt(dx*dx + dy*dy);
 
-    // altura real do terreno influencia
-    let alturaDrop = getAltura(drop.lat, drop.lng);
-    let alturaGlider = 300 + (alturaDrop * 200);
+    let nx = dx/dist;
+    let ny = dy/dist;
 
-    let velVertical = 65;
-    let velHorizontalQueda = 14;
+    // parâmetros base
+    let altura = 1000;
+    let alturaGlider = 300;
+
+    let velQueda = 65;
     let velGlider = 22;
 
-    for(let i=0;i<=120;i++){
+    let tempoQueda = (altura - alturaGlider) / velQueda;
 
-        let t = i/120;
+    let distQueda = tempoQueda * velQueda;
 
-        let lat = p.lat + (drop.lat - p.lat)*t;
-        let lng = p.lng + (drop.lng - p.lng)*t;
+    let restante = Math.max(0, dist*2.5 - distQueda);
 
-        let dx = drop.lat - lat;
-        let dy = drop.lng - lng;
+    let distFinal = restante;
 
-        let dist = Math.sqrt(dx*dx + dy*dy) * 2.5;
-
-        let tempoQueda = (alturaInicial - alturaGlider) / velVertical;
-
-        let distDuranteQueda = tempoQueda * velHorizontalQueda;
-
-        let restante = dist - distDuranteQueda;
-
-        let erro = Math.abs(restante);
-
-        if(erro < menorErro){
-            menorErro = erro;
-            melhor = {lat, lng};
-        }
-    }
-
-    return melhor;
-}
-
-// ================= TEMPO =================
-function calcularTempo(drop,p){
-
-    let escala=2.5;
-
-    let distTotal=distancia(drop,p)*escala;
-
-    let tempoQueda=(1000)/65;
-    let restante=Math.max(0,distTotal-(tempoQueda*65));
-    let tempoGlider=restante/22;
-
-    let tempoTotal=tempoQueda+tempoGlider;
-
-    let tempoBus=distancia(
-        {lat:busStart[0],lng:busStart[1]},
-        p
-    )/30;
-
-    document.getElementById("resultado").innerHTML=
-        `🎯 GOD DROP<br>
-         📏 Distância: ${distTotal.toFixed(0)}m<br>
-         ⏱️ Tempo: ${tempoTotal.toFixed(2)}s<br>
-         🚀 SPACE: ${tempoBus.toFixed(2)}s`;
+    return {
+        lat: drop.lat - nx * distFinal,
+        lng: drop.lng - ny * distFinal
+    };
 }
 
 // ================= UTILS =================
-function distancia(a,b){
-    let dx=a.lat-b.lat;
-    let dy=a.lng-b.lng;
-    return Math.sqrt(dx*dx+dy*dy);
-}
-
 function pontoMaisProximo(p,a,b){
-    let apx=p.lat-a[0],apy=p.lng-a[1];
-    let abx=b[0]-a[0],aby=b[1]-a[1];
+
+    let apx=p.lat-a[0], apy=p.lng-a[1];
+    let abx=b[0]-a[0], aby=b[1]-a[1];
 
     let t=(apx*abx+apy*aby)/(abx*abx+aby*aby);
     t=Math.max(0,Math.min(1,t));
