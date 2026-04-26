@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calculator (Base)</title>
+<title>Drop Calculator (Fixed)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -12,46 +12,75 @@ h1{text-align:center;padding:10px;}
 #map{height:80vh;}
 .panel{text-align:center;padding:10px;}
 button{
-    padding:10px;margin:5px;
-    background:#00ffcc;border:none;
+    padding:10px;
+    margin:5px;
+    background:#00ffcc;
+    border:none;
     border-radius:6px;
     cursor:pointer;
+    font-weight:bold;
 }
 </style>
 </head>
 
 <body>
 
-<h1>🎯 Drop Calculator (Base)</h1>
+<h1>🎯 Drop Calculator (Corrigido)</h1>
 
 <div id="map"></div>
 
 <div class="panel">
-    <button onclick="ativarModoOnibus()">Definir rota do ônibus</button>
+    <button onclick="toggleBusMode()">✈️ Definir rota do ônibus</button>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ================= MAPA =================
+// ================= MAP =================
 let map = L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:2});
 let bounds=[[0,0],[2048,2048]];
 L.imageOverlay("mapa.jpg",bounds).addTo(map);
 map.fitBounds(bounds);
 
+// ================= HEIGHTMAP =================
+let heightCanvas = document.createElement("canvas");
+let ctx = heightCanvas.getContext("2d");
+let heightLoaded = false;
+
+let img = new Image();
+img.src = "heightmap.png";
+
+img.onload = () => {
+    heightCanvas.width = img.width;
+    heightCanvas.height = img.height;
+    ctx.drawImage(img,0,0);
+    heightLoaded = true;
+};
+
+function getAltura(lat,lng){
+    if(!heightLoaded) return 0.5;
+
+    let x = Math.floor((lng/2048)*heightCanvas.width);
+    let y = Math.floor((lat/2048)*heightCanvas.height);
+
+    let pixel = ctx.getImageData(x,y,1,1).data[0];
+    return pixel/255;
+}
+
 // ================= VAR =================
-let busStart=null, busEnd=null;
-let modoOnibus=false;
+let busStart=null,busEnd=null;
+let busLine=null;
 
 let markerDrop=null;
+let linhaOtima=null;
 let pontoPulo=null;
 let pontoMergulho=null;
-let linha=null;
+
+let modoOnibus=false;
 
 // ================= CLICK =================
 map.on('click', e=>{
-
     if(modoOnibus){
         if(!busStart){
             busStart=[e.latlng.lat,e.latlng.lng];
@@ -59,101 +88,120 @@ map.on('click', e=>{
         }else{
             busEnd=[e.latlng.lat,e.latlng.lng];
             L.marker(busEnd).addTo(map);
-
-            L.polyline([busStart,busEnd],{
-                color:'cyan'
-            }).addTo(map);
-
+            desenharLinha();
             modoOnibus=false;
         }
         return;
     }
-
     setDrop(e.latlng);
 });
 
 // ================= BUS =================
-function ativarModoOnibus(){
+function toggleBusMode(){
     modoOnibus=true;
     busStart=null;
     busEnd=null;
+
+    if(busLine) map.removeLayer(busLine);
+}
+
+function desenharLinha(){
+    busLine=L.polyline([busStart,busEnd],{
+        color:'cyan',
+        weight:3
+    }).addTo(map);
 }
 
 // ================= DROP =================
 function setDrop(latlng){
-
     if(markerDrop) map.removeLayer(markerDrop);
     markerDrop=L.marker(latlng).addTo(map);
-
-    calcularRota(latlng);
+    desenharRota(latlng);
 }
 
-// ================= LÓGICA PRINCIPAL =================
-function calcularRota(drop){
+// ================= ROTA =================
+function desenharRota(drop){
+
+    if(!busStart || !busEnd) return;
 
     let p = pontoMaisProximo(drop,busStart,busEnd);
 
+    if(linhaOtima) map.removeLayer(linhaOtima);
     if(pontoPulo) map.removeLayer(pontoPulo);
     if(pontoMergulho) map.removeLayer(pontoMergulho);
-    if(linha) map.removeLayer(linha);
 
-    // 🔴 ponto de pulo
-    pontoPulo = L.circleMarker([p.lat,p.lng],{
-        radius:6,color:'red'
+    // linha verde
+    linhaOtima = L.polyline([[p.lat,p.lng],[drop.lat,drop.lng]],{
+        color:'lime',
+        dashArray:'8,8'
     }).addTo(map);
 
-    // 🔵 ponto de mergulho (base)
-    let mergulho = calcularMergulho(drop,p);
+    // ponto de pulo (vermelho)
+    pontoPulo = L.circleMarker([p.lat,p.lng],{
+        radius:6,
+        color:'red',
+        fillColor:'red',
+        fillOpacity:1
+    }).addTo(map);
+
+    // ponto de mergulho (CORRETO)
+    let mergulho = calcularMergulhoReal(drop,p);
 
     pontoMergulho = L.circleMarker([mergulho.lat,mergulho.lng],{
-        radius:7,color:'blue'
-    }).addTo(map);
-
-    // linha visual
-    linha = L.polyline([
-        [p.lat,p.lng],
-        [drop.lat,drop.lng]
-    ],{
-        color:'lime',
-        dashArray:'6,6'
+        radius:7,
+        color:'blue',
+        fillColor:'blue',
+        fillOpacity:1
     }).addTo(map);
 }
 
-// ================= MERGULHO BASE =================
-function calcularMergulho(drop,p){
+// ================= MERGULHO CORRIGIDO =================
+function calcularMergulhoReal(drop,p){
 
     let dx = drop.lat - p.lat;
     let dy = drop.lng - p.lng;
 
-    let dist = Math.sqrt(dx*dx + dy*dy);
+    let distTotal = Math.sqrt(dx*dx + dy*dy);
+    if(distTotal === 0) return drop;
 
-    let nx = dx/dist;
-    let ny = dy/dist;
+    let nx = dx / distTotal;
+    let ny = dy / distTotal;
 
-    // parâmetros base
-    let altura = 1000;
+    // física base
+    let alturaInicial = 1000;
     let alturaGlider = 300;
 
     let velQueda = 65;
-    let velGlider = 22;
 
-    let tempoQueda = (altura - alturaGlider) / velQueda;
+    let tempoQueda = (alturaInicial - alturaGlider) / velQueda;
+    let distQueda = velQueda * tempoQueda;
 
-    let distQueda = tempoQueda * velQueda;
+    // ajuste terreno leve (não quebrar cálculo)
+    let altDrop = getAltura(drop.lat,drop.lng);
+    let altPulo = getAltura(p.lat,p.lng);
 
-    let restante = Math.max(0, dist*2.5 - distQueda);
+    let diff = altDrop - altPulo;
 
-    let distFinal = restante;
+    distQueda += diff * 200;
 
+    // limite
+    distQueda = Math.max(50, Math.min(distTotal, distQueda));
+
+    // PONTO CERTO: baseado no PULO
     return {
-        lat: drop.lat - nx * distFinal,
-        lng: drop.lng - ny * distFinal
+        lat: p.lat + nx * distQueda,
+        lng: p.lng + ny * distQueda
     };
 }
 
 // ================= UTILS =================
-function pontoMaisProximo(p,a,b){
+function distancia(a,b){
+    let dx=a.lat-b.lat;
+    let dy=a.lng-b.lng;
+    return Math.sqrt(dx*dx+dy*dy);
+}
 
+function pontoMaisProximo(p,a,b){
     let apx=p.lat-a[0], apy=p.lng-a[1];
     let abx=b[0]-a[0], aby=b[1]-a[1];
 
