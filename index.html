@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Ryvox Calculator PRO</title>
+<title>Drop Calculator PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -92,10 +92,10 @@ map.on('click', function(e){
 
         if(!busStart){
             busStart=[e.latlng.lat,e.latlng.lng];
-            L.marker(busStart).addTo(map).bindPopup("Início").openPopup();
+            L.marker(busStart).addTo(map);
         }else{
             busEnd=[e.latlng.lat,e.latlng.lng];
-            L.marker(busEnd).addTo(map).bindPopup("Fim").openPopup();
+            L.marker(busEnd).addTo(map);
             desenharLinha();
             modoOnibus=false;
         }
@@ -160,7 +160,7 @@ function desenharRotaOtima(drop){
     if(pontoPulo) map.removeLayer(pontoPulo);
     if(pontoMergulho) map.removeLayer(pontoMergulho);
 
-    // 🟢 linha otimizada
+    // linha
     linhaOtima = L.polyline([
         [p.lat, p.lng],
         [drop.lat, drop.lng]
@@ -170,15 +170,15 @@ function desenharRotaOtima(drop){
         dashArray: "8,8"
     }).addTo(map);
 
-    // 🔴 ponto de pulo
+    // 🔴 pulo
     pontoPulo = L.circleMarker([p.lat, p.lng], {
         radius:6,
         color:'red',
         fillColor:'red',
         fillOpacity:1
-    }).addTo(map).bindPopup("🔴 Pular aqui");
+    }).addTo(map);
 
-    // 🔵 ponto de mergulho
+    // 🔵 mergulho (AGORA CORRIGIDO)
     let mergulho = calcularPontoMergulho(drop, p);
 
     pontoMergulho = L.circleMarker([mergulho.lat, mergulho.lng], {
@@ -186,24 +186,35 @@ function desenharRotaOtima(drop){
         color:'blue',
         fillColor:'blue',
         fillOpacity:1
-    }).addTo(map).bindPopup("🔵 Afundar tudo aqui");
+    }).addTo(map);
 }
 
-// ================= PONTO MERGULHO =================
+// ================= MERGULHO CORRIGIDO =================
 
 function calcularPontoMergulho(drop, pontoPulo){
 
     let dx = drop.lat - pontoPulo.lat;
     let dy = drop.lng - pontoPulo.lng;
 
-    let dist = Math.sqrt(dx*dx + dy*dy);
+    let distTotal = Math.sqrt(dx*dx + dy*dy);
 
-    if(dist === 0) return drop;
+    if(distTotal === 0) return drop;
 
-    let nx = dx / dist;
-    let ny = dy / dist;
+    let nx = dx / distTotal;
+    let ny = dy / distTotal;
 
-    let distPlanar = 300; // ajuste fino
+    // física
+    let altura = 1000;
+    let alturaGlider = 300;
+
+    let velQueda = 65;
+    let velGlider = 22;
+
+    let tempoQueda = (altura - alturaGlider) / velQueda;
+
+    let distQueda = tempoQueda * velQueda;
+
+    let distPlanar = Math.max(0, distTotal - distQueda);
 
     return {
         lat: drop.lat - (nx * distPlanar),
