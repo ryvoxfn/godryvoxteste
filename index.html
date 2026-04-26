@@ -29,11 +29,11 @@ h1{
 }
 
 button{
-    padding:10px 15px;
+    padding:10px;
     margin:5px;
+    background:#00ffcc;
     border:none;
     border-radius:6px;
-    background:#00ffcc;
     cursor:pointer;
     font-weight:bold;
 }
@@ -42,7 +42,7 @@ button{
 
 <body>
 
-<h1>🎯 Drop Calculator PRO</h1>
+<h1>🎯 Drop Calculator PRO (God Drop)</h1>
 
 <div id="map"></div>
 
@@ -75,41 +75,17 @@ let busLine = null;
 let decorator = null;
 
 let markerDrop = null;
+let linhaOtima = null;
+let pontoPulo = null;
+
 let modoOnibus = false;
 
 let busMarker = null;
 let busProgress = 0;
 let animando = false;
 
-// ================= POIs =================
-let pois = [
-    {nome:"Brutal Bastion", x:1000, y:400, tipo:"perigo"},
-    {nome:"Frenzy Fields", x:1000, y:1200, tipo:"loot"},
-    {nome:"Faulty Splits", x:900, y:1000, tipo:"cidade"},
-    {nome:"Anvil Square", x:800, y:700, tipo:"cidade"},
-    {nome:"Slappy Shores", x:1500, y:800, tipo:"cidade"},
-    {nome:"Lonely Labs", x:1700, y:300, tipo:"perigo"}
-];
-
-function corPOI(t){
-    return t=="cidade"?"#00ffcc":t=="loot"?"#ffd700":"#ff4d4d";
-}
-
-pois.forEach(p=>{
-    let marker = L.marker([p.x,p.y],{
-        icon:L.divIcon({
-            html:`<div style="background:#0008;border:1px solid ${corPOI(p.tipo)};
-            padding:4px;border-radius:6px;color:${corPOI(p.tipo)}">${p.nome}</div>`
-        })
-    }).addTo(map);
-
-    marker.on('click',()=>{
-        setDrop([p.x,p.y], p.nome);
-    });
-});
-
 // ================= CLIQUE =================
-map.on('click', e=>{
+map.on('click', function(e){
 
     if(modoOnibus){
 
@@ -125,17 +101,17 @@ map.on('click', e=>{
         return;
     }
 
-    setDrop([e.latlng.lat,e.latlng.lng], "Drop escolhido");
+    setDrop(e.latlng);
 });
 
 // ================= FUNÇÕES =================
 
-function setDrop(coord,nome){
+function setDrop(latlng){
+
     if(markerDrop) map.removeLayer(markerDrop);
+    markerDrop = L.marker(latlng).addTo(map);
 
-    markerDrop = L.marker(coord).addTo(map)
-        .bindPopup(nome).openPopup();
-
+    desenharRotaOtima(latlng);
     calcular();
 }
 
@@ -147,7 +123,7 @@ function toggleBusMode(){
     if(busLine) map.removeLayer(busLine);
     if(decorator) map.removeLayer(decorator);
 
-    alert("Clique em 2 pontos para definir a rota");
+    alert("Clique em 2 pontos para definir a rota do ônibus");
 }
 
 function desenharLinha(){
@@ -168,6 +144,34 @@ function desenharLinha(){
                 pathOptions:{color:'white'}
             })
         }]
+    }).addTo(map);
+}
+
+// ================= ROTA OTIMIZADA =================
+
+function desenharRotaOtima(drop){
+
+    if(!busStart || !busEnd) return;
+
+    let p = pontoMaisProximo(drop, busStart, busEnd);
+
+    if(linhaOtima) map.removeLayer(linhaOtima);
+    if(pontoPulo) map.removeLayer(pontoPulo);
+
+    linhaOtima = L.polyline([
+        [p.lat, p.lng],
+        [drop.lat, drop.lng]
+    ], {
+        color: 'lime',
+        weight: 3,
+        dashArray: "8,8"
+    }).addTo(map);
+
+    pontoPulo = L.circleMarker([p.lat, p.lng], {
+        radius:6,
+        color:'red',
+        fillColor:'red',
+        fillOpacity:1
     }).addTo(map);
 }
 
@@ -235,28 +239,38 @@ function pontoMaisProximo(p,a,b){
 
 function calcular(){
 
-    if(!markerDrop||!busStart||!busEnd) return;
+    if(!markerDrop || !busStart || !busEnd) return;
 
-    let drop=markerDrop.getLatLng();
-    let p=pontoMaisProximo(drop,busStart,busEnd);
+    let drop = markerDrop.getLatLng();
+    let p = pontoMaisProximo(drop, busStart, busEnd);
 
-    let escala=2.5;
-    let dist=distancia(drop,p)*escala;
+    let escala = 2.5;
 
-    let tempoQueda= (1000-300)/65;
-    let restante=Math.max(0,dist-(tempoQueda*65));
-    let tempoGlider=restante/22;
+    let distTotal = distancia(drop, p) * escala;
 
-    let tempoTotal=tempoQueda+tempoGlider;
+    let velQueda = 65;
+    let velGlider = 22;
 
-    let distBus=distancia({lat:busStart[0],lng:busStart[1]},p)*escala;
-    let tempoOnibus=distBus/30;
+    let tempoQueda = (1000-300)/65;
+    let distQueda = tempoQueda * velQueda;
 
-    document.getElementById("resultado").innerHTML=
-        `📏 Distância: ${dist.toFixed(0)}m<br>
+    let restante = Math.max(0, distTotal - distQueda);
+    let tempoGlider = restante / velGlider;
+
+    let tempoTotal = tempoQueda + tempoGlider;
+
+    let distBus = distancia(
+        {lat:busStart[0], lng:busStart[1]},
+        p
+    ) * escala;
+
+    let tempoOnibus = distBus / 30;
+
+    document.getElementById("resultado").innerHTML =
+        `🎯 GOD DROP<br>
+         📏 Distância: ${distTotal.toFixed(0)}m<br>
          ⏱️ Tempo queda: ${tempoTotal.toFixed(2)}s<br>
-         ✈️ Tempo ônibus: ${tempoOnibus.toFixed(2)}s<br><br>
-         🎯 Pule em: ${tempoOnibus.toFixed(2)}s`;
+         ✈️ Pule em: ${tempoOnibus.toFixed(2)}s`;
 }
 
 </script>
