@@ -89,7 +89,6 @@ let animando = false;
 map.on('click', function(e){
 
     if(modoOnibus){
-
         if(!busStart){
             busStart=[e.latlng.lat,e.latlng.lng];
             L.marker(busStart).addTo(map);
@@ -178,7 +177,7 @@ function desenharRotaOtima(drop){
         fillOpacity:1
     }).addTo(map);
 
-    // 🔵 mergulho (INTELIGENTE)
+    // 🔵 mergulho DINÂMICO REAL
     let mergulho = calcularPontoMergulho(drop, p);
 
     pontoMergulho = L.circleMarker([mergulho.lat, mergulho.lng], {
@@ -189,7 +188,7 @@ function desenharRotaOtima(drop){
     }).addTo(map);
 }
 
-// ================= MERGULHO INTELIGENTE =================
+// ================= MERGULHO CORRIGIDO =================
 
 function calcularPontoMergulho(drop, pontoPulo){
 
@@ -197,47 +196,41 @@ function calcularPontoMergulho(drop, pontoPulo){
     let dy = drop.lng - pontoPulo.lng;
 
     let distTotal = Math.sqrt(dx*dx + dy*dy);
-
     if(distTotal === 0) return drop;
 
     let nx = dx / distTotal;
     let ny = dy / distTotal;
 
-    // física base
-    let altura = 1000;
-    let alturaGlider = 300;
+    // 🔥 distância ideal dinâmica
+    let distanciaIdeal;
 
-    let velQueda = 65;
-    let velGlider = 22;
-
-    let tempoQueda = (altura - alturaGlider) / velQueda;
-    let distQueda = tempoQueda * velQueda;
-
-    let distPlanar = Math.max(0, distTotal - distQueda);
-
-    // =========================
-    // AJUSTE DINÂMICO
-    // =========================
-
-    let ajuste = 0;
-
-    if(distTotal > 1200){
-        ajuste = 120;
-    } else if(distTotal > 800){
-        ajuste = 90;
+    if(distTotal > 1400){
+        distanciaIdeal = 1200;
+    } else if(distTotal > 900){
+        distanciaIdeal = 1000;
     } else if(distTotal > 500){
-        ajuste = 60;
+        distanciaIdeal = 800;
     } else {
-        ajuste = 40;
+        distanciaIdeal = 600;
     }
 
-    let fatorTerreno = 0.85;
+    // 🔥 terreno (simulação simples)
+    let fator = 1;
 
-    let distFinal = (distPlanar * fatorTerreno) + ajuste;
+    if(drop.lat > 1400){
+        fator = 0.75; // montanha
+    } else if(drop.lng > 1400){
+        fator = 1.2; // baixo
+    }
+
+    let distFinal = distanciaIdeal * fator;
+
+    let porcentagem = (distTotal - distFinal) / distTotal;
+    porcentagem = Math.max(0, Math.min(1, porcentagem));
 
     return {
-        lat: drop.lat - (nx * distFinal),
-        lng: drop.lng - (ny * distFinal)
+        lat: pontoPulo.lat + dx * porcentagem,
+        lng: pontoPulo.lng + dy * porcentagem
     };
 }
 
@@ -314,16 +307,9 @@ function calcular(){
 
     let distTotal = distancia(drop, p) * escala;
 
-    let velQueda = 65;
-    let velGlider = 22;
-
     let tempoQueda = (1000-300)/65;
-    let distQueda = tempoQueda * velQueda;
-
-    let restante = Math.max(0, distTotal - distQueda);
-    let tempoGlider = restante / velGlider;
-
-    let tempoTotal = tempoQueda + tempoGlider;
+    let restante = Math.max(0, distTotal - (tempoQueda*65));
+    let tempoTotal = tempoQueda + (restante/22);
 
     let distBus = distancia(
         {lat:busStart[0], lng:busStart[1]},
@@ -335,7 +321,7 @@ function calcular(){
     document.getElementById("resultado").innerHTML =
         `🎯 GOD DROP<br>
          📏 Distância: ${distTotal.toFixed(0)}m<br>
-         ⏱️ Tempo queda: ${tempoTotal.toFixed(2)}s<br>
+         ⏱️ Tempo: ${tempoTotal.toFixed(2)}s<br>
          ✈️ Pule em: ${tempoOnibus.toFixed(2)}s`;
 }
 
