@@ -42,7 +42,7 @@ button{
 
 <body>
 
-<h1>🎯 Drop Calculator PRO (God Drop)</h1>
+<h1>🎯 Drop Calculator PRO (God System)</h1>
 
 <div id="map"></div>
 
@@ -77,6 +77,7 @@ let decorator = null;
 let markerDrop = null;
 let linhaOtima = null;
 let pontoPulo = null;
+let pontoMergulho = null;
 
 let modoOnibus = false;
 
@@ -157,7 +158,9 @@ function desenharRotaOtima(drop){
 
     if(linhaOtima) map.removeLayer(linhaOtima);
     if(pontoPulo) map.removeLayer(pontoPulo);
+    if(pontoMergulho) map.removeLayer(pontoMergulho);
 
+    // 🟢 linha otimizada
     linhaOtima = L.polyline([
         [p.lat, p.lng],
         [drop.lat, drop.lng]
@@ -167,12 +170,45 @@ function desenharRotaOtima(drop){
         dashArray: "8,8"
     }).addTo(map);
 
+    // 🔴 ponto de pulo
     pontoPulo = L.circleMarker([p.lat, p.lng], {
         radius:6,
         color:'red',
         fillColor:'red',
         fillOpacity:1
-    }).addTo(map);
+    }).addTo(map).bindPopup("🔴 Pular aqui");
+
+    // 🔵 ponto de mergulho
+    let mergulho = calcularPontoMergulho(drop, p);
+
+    pontoMergulho = L.circleMarker([mergulho.lat, mergulho.lng], {
+        radius:7,
+        color:'blue',
+        fillColor:'blue',
+        fillOpacity:1
+    }).addTo(map).bindPopup("🔵 Afundar tudo aqui");
+}
+
+// ================= PONTO MERGULHO =================
+
+function calcularPontoMergulho(drop, pontoPulo){
+
+    let dx = drop.lat - pontoPulo.lat;
+    let dy = drop.lng - pontoPulo.lng;
+
+    let dist = Math.sqrt(dx*dx + dy*dy);
+
+    if(dist === 0) return drop;
+
+    let nx = dx / dist;
+    let ny = dy / dist;
+
+    let distPlanar = 300; // ajuste fino
+
+    return {
+        lat: drop.lat - (nx * distPlanar),
+        lng: drop.lng - (ny * distPlanar)
+    };
 }
 
 // ================= ANIMAÇÃO =================
