@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calculator PRO (REAL GOD SYSTEM)</title>
+<title>Drop Calculator PRO (GOD REAL)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -22,7 +22,7 @@ button{
 
 <body>
 
-<h1>🎯 Drop Calculator PRO (REAL GOD SYSTEM)</h1>
+<h1>🎯 Drop Calculator PRO (GOD REAL)</h1>
 
 <div id="map"></div>
 
@@ -95,6 +95,7 @@ map.on('click', e=>{
 function toggleBusMode(){
     modoOnibus=true;
     busStart=null;busEnd=null;
+
     if(busLine) map.removeLayer(busLine);
     if(decorator) map.removeLayer(decorator);
 }
@@ -106,7 +107,10 @@ function desenharLinha(){
         patterns:[{
             offset:'5%',
             repeat:'10%',
-            symbol:L.Symbol.arrowHead({pixelSize:10,pathOptions:{color:'white'}})
+            symbol:L.Symbol.arrowHead({
+                pixelSize:10,
+                pathOptions:{color:'white'}
+            })
         }]
     }).addTo(map);
 }
@@ -121,6 +125,8 @@ function setDrop(latlng){
 // ================= ROTA =================
 function desenharRota(drop){
 
+    if(!busStart || !busEnd) return;
+
     let p=pontoMaisProximo(drop,busStart,busEnd);
 
     if(linhaOtima) map.removeLayer(linhaOtima);
@@ -131,65 +137,66 @@ function desenharRota(drop){
         color:'lime',dashArray:'8,8'
     }).addTo(map);
 
-    pontoPulo=L.circleMarker([p.lat,p.lng],{radius:6,color:'red'}).addTo(map);
+    pontoPulo=L.circleMarker([p.lat,p.lng],{
+        radius:6,color:'red',fillColor:'red',fillOpacity:1
+    }).addTo(map);
 
     let mergulho=calcularMergulhoREAL(drop,p);
 
     pontoMergulho=L.circleMarker([mergulho.lat,mergulho.lng],{
-        radius:7,color:'blue'
+        radius:7,color:'blue',fillColor:'blue',fillOpacity:1
     }).addTo(map);
 
-    calcularTempo(drop,p,mergulho);
+    calcularTempo(drop,p);
 }
 
-// ================= MERGULHO REAL (SIMULAÇÃO) =================
-function calcularMergulhoREAL(drop,p){
+// ================= MERGULHO REAL =================
+function calcularMergulhoREAL(drop, p){
 
-    let steps=80;
+    let melhor = null;
+    let menorErro = Infinity;
 
-    let melhor=null;
-    let melhorErro=999999;
+    let alturaInicial = 1000;
 
-    for(let i=0;i<=steps;i++){
+    // altura real do terreno influencia
+    let alturaDrop = getAltura(drop.lat, drop.lng);
+    let alturaGlider = 300 + (alturaDrop * 200);
 
-        let t=i/steps;
+    let velVertical = 65;
+    let velHorizontalQueda = 14;
+    let velGlider = 22;
 
-        let lat=p.lat + (drop.lat-p.lat)*t;
-        let lng=p.lng + (drop.lng-p.lng)*t;
+    for(let i=0;i<=120;i++){
 
-        let tempoQueda = simularQueda(lat,lng,drop);
+        let t = i/120;
 
-        let erro = Math.abs(tempoQueda);
+        let lat = p.lat + (drop.lat - p.lat)*t;
+        let lng = p.lng + (drop.lng - p.lng)*t;
 
-        if(erro<melhorErro){
-            melhorErro=erro;
-            melhor={lat,lng};
+        let dx = drop.lat - lat;
+        let dy = drop.lng - lng;
+
+        let dist = Math.sqrt(dx*dx + dy*dy) * 2.5;
+
+        let tempoQueda = (alturaInicial - alturaGlider) / velVertical;
+
+        let distDuranteQueda = tempoQueda * velHorizontalQueda;
+
+        let restante = dist - distDuranteQueda;
+
+        let erro = Math.abs(restante);
+
+        if(erro < menorErro){
+            menorErro = erro;
+            melhor = {lat, lng};
         }
     }
 
     return melhor;
 }
 
-// ================= SIMULA QUEDA =================
-function simularQueda(lat,lng,drop){
-
-    let alturaInicial=1000;
-    let vel=65;
-
-    let dx=drop.lat-lat;
-    let dy=drop.lng-lng;
-
-    let dist=Math.sqrt(dx*dx+dy*dy)*2.5;
-
-    let tempoQueda=alturaInicial/vel;
-
-    let distanciaQueda=tempoQueda*vel;
-
-    return dist - distanciaQueda;
-}
-
 // ================= TEMPO =================
-function calcularTempo(drop,p,mergulho){
+function calcularTempo(drop,p){
 
     let escala=2.5;
 
@@ -207,9 +214,10 @@ function calcularTempo(drop,p,mergulho){
     )/30;
 
     document.getElementById("resultado").innerHTML=
-        `🎯 GOD DROP REAL<br>
-         ⏱️ Tempo total: ${tempoTotal.toFixed(2)}s<br>
-         🚀 SPACE perfeito: ${tempoBus.toFixed(2)}s`;
+        `🎯 GOD DROP<br>
+         📏 Distância: ${distTotal.toFixed(0)}m<br>
+         ⏱️ Tempo: ${tempoTotal.toFixed(2)}s<br>
+         🚀 SPACE: ${tempoBus.toFixed(2)}s`;
 }
 
 // ================= UTILS =================
