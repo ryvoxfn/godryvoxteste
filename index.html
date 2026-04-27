@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calc Pro (Auto Calibrado)</title>
+<title>Drop Calc Pro (IA Nível 3)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -65,7 +65,7 @@ button{
 <div class="info">
     <p>📍 <span id="coords">-</span></p>
     <p>📏 <span id="dist">-</span></p>
-    <p>⚙️ <span id="erro">-</span></p>
+    <p>🧠 <span id="erro">-</span></p>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -104,7 +104,40 @@ function getTerreno(lat,lng){
     return val * 830 - 30;
 }
 
-// ================= CONFIG AUTO =================
+// ================= IA MEMÓRIA =================
+let memoriaIA = {};
+
+function getRegiao(lat,lng){
+    let size = 200;
+    let x = Math.floor(lat/size);
+    let y = Math.floor(lng/size);
+    return x+"_"+y;
+}
+
+function getConfigLocal(lat,lng){
+    let key = getRegiao(lat,lng);
+    return memoriaIA[key] || config;
+}
+
+function salvarConfig(lat,lng){
+    let key = getRegiao(lat,lng);
+    memoriaIA[key] = {...config};
+}
+
+// ================= STORAGE =================
+function salvarMemoria(){
+    localStorage.setItem("iaDrop", JSON.stringify(memoriaIA));
+}
+
+function carregarMemoria(){
+    let data = localStorage.getItem("iaDrop");
+    if(data){
+        memoriaIA = JSON.parse(data);
+    }
+}
+carregarMemoria();
+
+// ================= CONFIG =================
 let config = {
     gravidade: 30,
     velQueda: 35,
@@ -114,7 +147,7 @@ let config = {
 
 // ================= VAR =================
 let busStart=null,busEnd=null,busLine=null;
-let markerDrop=null,linha=null,puloMark=null,glideMark=null,finalMark=null;
+let markerDrop=null,puloMark=null,glideMark=null,finalMark=null;
 
 let modoOnibus=false;
 
@@ -126,13 +159,11 @@ map.on('click',e=>{
         if(!busStart){
             busStart=[e.latlng.lat,e.latlng.lng];
             L.marker(busStart).addTo(map);
-
         }else{
             busEnd=[e.latlng.lat,e.latlng.lng];
             L.marker(busEnd).addTo(map);
 
             if(busLine) map.removeLayer(busLine);
-
             busLine=L.polyline([busStart,busEnd],{color:'cyan'}).addTo(map);
 
             modoOnibus=false;
@@ -166,6 +197,8 @@ function distancia(a,b){
 // ================= SIMULAÇÃO =================
 function simular(p, drop){
 
+    config = getConfigLocal(p.lat, p.lng);
+
     let dx = drop.lat - p.lat;
     let dy = drop.lng - p.lng;
 
@@ -174,11 +207,8 @@ function simular(p, drop){
     let dirX = dx / distTotal;
     let dirY = dy / distTotal;
 
-    let t = 0;
-    let dt = 0.016;
-
-    let dist = 0;
-    let vel = 0;
+    let t = 0, dt = 0.016;
+    let dist = 0, vel = 0;
 
     let glide = false;
     let glidePoint = null;
@@ -188,23 +218,21 @@ function simular(p, drop){
         let lat = p.lat + dirX * dist;
         let lng = p.lng + dirY * dist;
 
-        if(isNaN(lat) || isNaN(lng)) break;
+        if(isNaN(lat)||isNaN(lng)) break;
 
         let terreno = getTerreno(lat,lng);
-
         let altura = 800 - (0.5 * config.gravidade * t * t);
-
         let rel = altura - terreno;
 
         if(!glide && rel <= config.alturaGlide){
-            glide = true;
-            glidePoint = {lat,lng};
+            glide=true;
+            glidePoint={lat,lng};
         }
 
         if(!glide){
-            vel += (config.velQueda - vel) * 0.08;
+            vel += (config.velQueda - vel)*0.08;
         }else{
-            vel += (config.velGlide - vel) * 0.05;
+            vel += (config.velGlide - vel)*0.05;
         }
 
         dist += vel * dt;
@@ -213,46 +241,64 @@ function simular(p, drop){
             return {final:{lat,lng}, glide:glidePoint};
         }
 
-        t += dt;
+        t+=dt;
     }
 
     return {final:drop, glide:glidePoint};
 }
 
-// ================= CALIBRAÇÃO =================
-function calibrar(pulo, drop){
+// ================= IA NÍVEL 3 =================
+function calibrarIA3(pulo, drop){
 
-    let melhorErro = 999999;
+    let melhorErro = distancia(simular(pulo, drop).final, drop);
 
-    for(let i=0;i<25;i++){
+    let step = {
+        gravidade:2,
+        velQueda:2,
+        velGlide:2,
+        alturaGlide:20
+    };
 
-        let teste = {
-            gravidade: config.gravidade + (Math.random()-0.5)*5,
-            velQueda: config.velQueda + (Math.random()-0.5)*5,
-            velGlide: config.velGlide + (Math.random()-0.5)*5,
-            alturaGlide: config.alturaGlide + (Math.random()-0.5)*50
-        };
+    for(let fase=0;fase<3;fase++){
 
-        let backup = {...config};
-        config = teste;
+        for(let i=0;i<25;i++){
 
-        let sim = simular(pulo, drop);
-        let err = distancia(sim.final, drop);
+            let teste={...config};
 
-        if(err < melhorErro){
-            melhorErro = err;
-        }else{
-            config = backup;
+            teste.gravidade += (Math.random()-0.5)*step.gravidade;
+            teste.velQueda += (Math.random()-0.5)*step.velQueda;
+            teste.velGlide += (Math.random()-0.5)*step.velGlide;
+            teste.alturaGlide += (Math.random()-0.5)*step.alturaGlide;
+
+            let backup={...config};
+            config=teste;
+
+            let sim=simular(pulo,drop);
+            let erro=distancia(sim.final,drop);
+
+            if(erro<melhorErro){
+                melhorErro=erro;
+            }else{
+                config=backup;
+            }
         }
+
+        step.gravidade*=0.5;
+        step.velQueda*=0.5;
+        step.velGlide*=0.5;
+        step.alturaGlide*=0.5;
     }
 
-    document.getElementById("erro").innerText = melhorErro.toFixed(1)+" m";
+    salvarConfig(drop.lat,drop.lng);
+    salvarMemoria();
+
+    document.getElementById("erro").innerText = melhorErro.toFixed(2)+" m";
 }
 
 // ================= MELHOR PULO =================
 function melhorPulo(drop,a,b){
 
-    let best=null,err=999999,bestGlide=null;
+    let best=null,err=999999;
 
     for(let i=0;i<=1;i+=0.02){
 
@@ -266,11 +312,10 @@ function melhorPulo(drop,a,b){
         if(e<err){
             err=e;
             best={lat,lng};
-            bestGlide=sim.glide;
         }
     }
 
-    return {pulo:best,glide:bestGlide};
+    return best;
 }
 
 // ================= DRAW =================
@@ -285,17 +330,15 @@ function draw(drop){
 
     if(!busStart||!busEnd) return;
 
-    let data=melhorPulo(drop,busStart,busEnd);
+    let pulo=melhorPulo(drop,busStart,busEnd);
 
-    calibrar(data.pulo, drop);
+    calibrarIA3(pulo,drop);
 
-    let sim=simular(data.pulo,drop);
+    let sim=simular(pulo,drop);
 
-    let pulo=data.pulo;
     let glide=sim.glide;
     let final=sim.final;
 
-    if(linha) map.removeLayer(linha);
     if(puloMark) map.removeLayer(puloMark);
     if(glideMark) map.removeLayer(glideMark);
     if(finalMark) map.removeLayer(finalMark);
@@ -304,14 +347,12 @@ function draw(drop){
         if(l instanceof L.Tooltip) map.removeLayer(l);
     });
 
-    linha=L.polyline([[pulo.lat,pulo.lng],[drop.lat,drop.lng]],{
-        color:'#00e0ff',
-        dashArray:'10,10'
-    }).addTo(map);
-
     puloMark=L.circleMarker([pulo.lat,pulo.lng],{color:'red'}).addTo(map);
-    glideMark=L.circleMarker([glide.lat,glide.lng],{color:'lime'}).addTo(map);
     finalMark=L.circleMarker([final.lat,final.lng],{color:'blue'}).addTo(map);
+
+    if(glide){
+        glideMark=L.circleMarker([glide.lat,glide.lng],{color:'lime'}).addTo(map);
+    }
 
     L.tooltip({permanent:true}).setContent("Jump").setLatLng(pulo).addTo(map);
 
