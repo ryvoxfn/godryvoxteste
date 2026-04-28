@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calc Pro (IA + Heatmap)</title>
+<title>Drop Calc PRO (Solver)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -33,10 +33,9 @@ button{
 <body>
 
 <div class="topbar">
-    <b>🎯 Drop Calc Pro</b>
+    <b>🎯 Drop Calc PRO</b>
     <div>
         <button onclick="modoBus()">Ônibus</button>
-        <button onclick="gerarHeatmap()">Heatmap</button>
         <button onclick="resetar()">Reset</button>
     </div>
 </div>
@@ -68,29 +67,18 @@ img.onload=()=>{
     loaded=true;
 };
 
-function alturaTerreno(lat,lng){
+function terreno(lat,lng){
     if(!loaded) return 0;
     let x=(lng/2048)*canvas.width;
     let y=(lat/2048)*canvas.height;
     let v=ctx.getImageData(x,y,1,1).data[0]/255;
-    return v*850-20;
+    return v*860-25;
 }
-
-// ================= IA =================
-let IA={
-    gravidade:28,
-    velAr:36,
-    velGlide:27,
-    alturaGlide:260,
-    alturaInicial:820
-};
 
 // ================= VAR =================
 let busA=null,busB=null,drop=null;
 let linhaBus=null,linhaRota=null;
-
 let jumpMark=null,glideMark=null;
-let heatLayers=[];
 
 let setBus=false;
 
@@ -129,7 +117,7 @@ function resetar(){
     location.reload();
 }
 
-// ================= SIMULAÇÃO =================
+// ================= FÍSICA AVANÇADA =================
 function simular(p){
 
     let dx=drop.lat-p.lat;
@@ -140,7 +128,10 @@ function simular(p){
     let dirY=dy/distTotal;
 
     let t=0,dt=0.016;
-    let dist=0,vel=0;
+    let dist=0;
+
+    let vel=0;
+    let velY=0;
 
     let glide=false;
     let glidePos=null;
@@ -150,26 +141,40 @@ function simular(p){
         let lat=p.lat+dirX*dist;
         let lng=p.lng+dirY*dist;
 
-        let terreno=alturaTerreno(lat,lng);
+        let hTerreno=terreno(lat,lng);
 
-        let altura=IA.alturaInicial-(0.5*IA.gravidade*t*t);
-        let rel=altura-terreno;
+        // queda acumulada realista
+        velY += 27 * dt;
+        let altura = 820 - velY * t;
 
-        if(!glide && rel<IA.alturaGlide){
+        let rel=altura-hTerreno;
+
+        // transição suave glide
+        if(!glide && rel<260){
             glide=true;
             glidePos={lat,lng};
         }
 
-        let alvo=glide?IA.velGlide:IA.velAr;
-        vel+=(alvo-vel)*0.06;
+        let alvo;
 
-        dist+=vel*dt;
+        if(!glide){
+            alvo = 38;
+        }else{
+            // desaceleração progressiva
+            alvo = 26 + Math.sin(t)*1.2;
+        }
 
-        if(altura<=terreno){
+        vel += (alvo-vel)*0.09;
+
+        dist += vel * dt;
+
+        if(altura<=hTerreno){
             return {final:{lat,lng},glide:glidePos};
         }
 
-        if(t>120) return {final:drop,glide:glidePos};
+        if(t>120){
+            return {final:drop,glide:glidePos};
+        }
 
         t+=dt;
     }
@@ -182,41 +187,35 @@ function dist(a,b){
     return Math.sqrt(dx*dx+dy*dy);
 }
 
-// ================= IA BUSCA =================
+// ================= SOLVER PROFISSIONAL =================
 function melhorPonto(){
 
     let melhor=null,erroMin=999999,melhorGlide=null;
 
-    for(let i=0;i<=1;i+=0.02){
+    let ranges=[1,0.2,0.05,0.01,0.002];
 
-        let lat=busA[0]+(busB[0]-busA[0])*i;
-        let lng=busA[1]+(busB[1]-busA[1])*i;
+    let center=0.5;
 
-        let sim=simular({lat,lng});
-        let erro=dist(sim.final,drop);
+    ranges.forEach(r=>{
 
-        if(erro<erroMin){
-            erroMin=erro;
-            melhor={lat,lng};
-            melhorGlide=sim.glide;
+        for(let i=center-r;i<=center+r;i+=r/10){
+
+            if(i<0||i>1) continue;
+
+            let lat=busA[0]+(busB[0]-busA[0])*i;
+            let lng=busA[1]+(busB[1]-busA[1])*i;
+
+            let sim=simular({lat,lng});
+            let erro=dist(sim.final,drop);
+
+            if(erro<erroMin){
+                erroMin=erro;
+                melhor={lat,lng};
+                melhorGlide=sim.glide;
+                center=i;
+            }
         }
-    }
-
-    // refinamento
-    for(let i=-0.02;i<=0.02;i+=0.002){
-
-        let lat=melhor.lat+(busB[0]-busA[0])*i;
-        let lng=melhor.lng+(busB[1]-busA[1])*i;
-
-        let sim=simular({lat,lng});
-        let erro=dist(sim.final,drop);
-
-        if(erro<erroMin){
-            erroMin=erro;
-            melhor={lat,lng};
-            melhorGlide=sim.glide;
-        }
-    }
+    });
 
     return {jump:melhor,glide:melhorGlide};
 }
@@ -226,9 +225,9 @@ function calcular(){
 
     if(!busA||!busB||!drop) return;
 
-    if(linhaRota) map.removeLayer(linhaRota);
-    if(jumpMark) map.removeLayer(jumpMark);
-    if(glideMark) map.removeLayer(glideMark);
+    [linhaRota,jumpMark,glideMark].forEach(x=>{
+        if(x) map.removeLayer(x);
+    });
 
     let best=melhorPonto();
 
@@ -237,44 +236,18 @@ function calcular(){
         dashArray:'10,10'
     }).addTo(map);
 
-    jumpMark=L.circleMarker(best.jump,{radius:7,color:'red'}).addTo(map);
+    jumpMark=L.circleMarker(best.jump,{
+        radius:8,color:'red',fillColor:'red',fillOpacity:1
+    }).addTo(map);
 
     if(best.glide){
-        glideMark=L.circleMarker(best.glide,{radius:7,color:'lime'}).addTo(map);
-    }
-}
-
-// ================= HEATMAP =================
-function gerarHeatmap(){
-
-    if(!busA||!busB||!drop) return;
-
-    // limpa antigo
-    heatLayers.forEach(l=>map.removeLayer(l));
-    heatLayers=[];
-
-    for(let i=0;i<=1;i+=0.05){
-
-        let lat=busA[0]+(busB[0]-busA[0])*i;
-        let lng=busA[1]+(busB[1]-busA[1])*i;
-
-        let sim=simular({lat,lng});
-        let erro=dist(sim.final,drop);
-
-        let cor;
-
-        if(erro<20) cor="red";
-        else if(erro<60) cor="yellow";
-        else cor="blue";
-
-        let c=L.circleMarker([lat,lng],{
-            radius:6,
-            color:cor,
-            fillOpacity:0.7
+        glideMark=L.circleMarker(best.glide,{
+            radius:8,color:'lime',fillColor:'lime',fillOpacity:1
         }).addTo(map);
-
-        heatLayers.push(c);
     }
+
+    let final=simular(best.jump).final;
+    console.log("ERRO REAL:",dist(final,drop));
 }
 
 </script>
