@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calc PRO (Solver Real)</title>
+<title>Drop Calc PRO (Elite Solver)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -66,7 +66,7 @@ body{
 
 <div class="info">
     <p>📍 <span id="coords">-</span></p>
-    <p>📏 <span id="erro">-</span></p>
+    <p>📏 Erro: <span id="erro">-</span></p>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -164,43 +164,48 @@ function simular(p, drop){
     let dirX = dx/d;
     let dirY = dy/d;
 
-    let t=0,dt=0.016;
+    let t=0,dt=0.02;
     let distPerc=0,vel=0;
 
     let glide=false, glidePoint=null;
+
+    let grav=32;
+    let alturaInicial=820;
 
     while(true){
 
         let lat=p.lat + dirX*distPerc;
         let lng=p.lng + dirY*distPerc;
 
-        // terreno atual + futuro (PRECISÃO)
         let t1=getTerreno(lat,lng);
-        let t2=getTerreno(lat+dirX*20,lng+dirY*20);
-        let terreno=(t1*0.7 + t2*0.3);
+        let t2=getTerreno(lat+dirX*25,lng+dirY*25);
+        let terreno=(t1*0.75 + t2*0.25);
 
-        let altura=800 - (0.5*30*t*t);
+        let altura=alturaInicial - (0.5*grav*t*t);
         let rel=altura - terreno;
 
-        // GLIDE INTELIGENTE
-        let trigger=250 + (terreno*0.05);
+        let trigger=300 + (terreno*0.04);
 
         if(!glide && rel<=trigger){
             glide=true;
             glidePoint={lat,lng};
         }
 
-        // VELOCIDADE REALISTA
-        let target=glide?26:38;
+        let target;
 
-        if(rel>400) target+=6;
-        if(rel<200) target-=4;
+        if(!glide){
+            target=45;
+        }else{
+            target=22;
+        }
 
-        vel += (target - vel) * (glide?0.04:0.07);
+        if(rel>500) target+=10;
+        if(rel<200) target-=6;
+
+        vel += (target - vel) * (glide?0.03:0.09);
 
         distPerc += vel*dt;
 
-        // IMPACTO REAL
         if(rel<=0){
             return {final:{lat,lng}, glide:glidePoint};
         }
@@ -213,28 +218,68 @@ function simular(p, drop){
     }
 }
 
-// ================= SOLVER PRECISO =================
+// ================= SOLVER ELITE =================
 function solver(drop,a,b){
 
-    let best=null,err=999999,glide=null;
+    function ponto(i){
+        return {
+            lat: a[0] + (b[0] - a[0]) * i,
+            lng: a[1] + (b[1] - a[1]) * i
+        };
+    }
 
-    for(let i=0;i<=1;i+=0.02){
+    let best=null, bestErr=999999, bestGlide=null;
 
-        let lat=a[0]+(b[0]-a[0])*i;
-        let lng=a[1]+(b[1]-a[1])*i;
-
-        let sim=simular({lat,lng},drop);
-
-        let e=dist(sim.final,drop);
-
-        if(e<err){
-            err=e;
-            best={lat,lng};
-            glide=sim.glide;
+    // PASSO 1
+    for(let i=0;i<=1;i+=0.05){
+        let sim=simular(ponto(i),drop);
+        let err=dist(sim.final,drop);
+        if(err<bestErr){
+            bestErr=err;
+            best=i;
+            bestGlide=sim.glide;
         }
     }
 
-    return {jump:best, glide, erro:err};
+    // PASSO 2 refinamento
+    let range=0.05;
+
+    for(let k=0;k<6;k++){
+        let start=Math.max(0,best-range);
+        let end=Math.min(1,best+range);
+
+        let step=range/10;
+
+        for(let i=start;i<=end;i+=step){
+            let sim=simular(ponto(i),drop);
+            let err=dist(sim.final,drop);
+
+            if(err<bestErr){
+                bestErr=err;
+                best=i;
+                bestGlide=sim.glide;
+            }
+        }
+
+        range*=0.4;
+    }
+
+    let finalPoint=ponto(best);
+    let finalSim=simular(finalPoint,drop);
+
+    let finalErr=dist(finalSim.final,drop);
+
+    // micro ajuste IA
+    if(finalErr>10){
+        finalPoint.lat += (drop.lat - finalSim.final.lat)*0.2;
+        finalPoint.lng += (drop.lng - finalSim.final.lng)*0.2;
+    }
+
+    return {
+        jump: finalPoint,
+        glide: finalSim.glide,
+        erro: finalErr
+    };
 }
 
 // ================= DRAW =================
@@ -258,19 +303,16 @@ function draw(drop){
     let jump=data.jump;
     let glide=data.glide;
 
-    // JUMP
     jumpMark=L.circleMarker([jump.lat,jump.lng],{
         radius:8,color:'red',fillOpacity:1
     }).addTo(map).bindTooltip("Jump",{permanent:true});
 
-    // GLIDE
     if(glide){
         glideMark=L.circleMarker([glide.lat,glide.lng],{
             radius:8,color:'lime',fillOpacity:1
         }).addTo(map).bindTooltip("Glide",{permanent:true});
     }
 
-    // HUD
     document.getElementById("coords").innerText =
         `${drop.lat.toFixed(0)}, ${drop.lng.toFixed(0)}`;
 
