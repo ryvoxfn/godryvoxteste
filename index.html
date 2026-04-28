@@ -2,30 +2,50 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calc PRO (Solver)</title>
+<title>Drop Calc PRO (Solver Real)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{margin:0;background:#0b0f1a;color:white;font-family:Arial;}
-#map{height:100vh;}
+body{
+    margin:0;
+    font-family:Arial;
+    background:#0b0f1a;
+    color:white;
+}
 
 .topbar{
     position:absolute;
-    top:0;width:100%;
+    top:0;
+    width:100%;
     display:flex;
     justify-content:space-between;
     padding:10px 20px;
     background:rgba(0,0,0,0.4);
+    backdrop-filter: blur(10px);
     z-index:1000;
 }
 
 button{
-    padding:8px 12px;
+    padding:8px 14px;
     border:none;
     border-radius:8px;
     background:#00ffc3;
+    font-weight:bold;
     cursor:pointer;
+}
+
+#map{
+    height:100vh;
+}
+
+.info{
+    position:absolute;
+    bottom:20px;
+    left:20px;
+    background:rgba(0,0,0,0.5);
+    padding:15px;
+    border-radius:12px;
 }
 </style>
 </head>
@@ -33,26 +53,30 @@ button{
 <body>
 
 <div class="topbar">
-    <b>🎯 Drop Calc PRO</b>
+    <h2>🎯 Drop Calc PRO</h2>
     <div>
-        <button onclick="modoBus()">Ônibus</button>
+        <button onclick="modoOnibus=true">Definir Ônibus</button>
         <button onclick="resetar()">Reset</button>
     </div>
 </div>
 
 <div id="map"></div>
 
+<div class="info">
+<p id="dist"></p>
+</div>
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ================= MAP =================
-let map=L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:2});
+// ===== MAPA =====
+let map = L.map('map',{crs:L.CRS.Simple,minZoom:-2});
 let bounds=[[0,0],[2048,2048]];
 L.imageOverlay("mapa.jpg",bounds).addTo(map);
 map.fitBounds(bounds);
 
-// ================= HEIGHTMAP =================
+// ===== HEIGHTMAP =====
 let canvas=document.createElement("canvas");
 let ctx=canvas.getContext("2d");
 let loaded=false;
@@ -67,187 +91,200 @@ img.onload=()=>{
     loaded=true;
 };
 
-function terreno(lat,lng){
+function getTerreno(lat,lng){
     if(!loaded) return 0;
     let x=(lng/2048)*canvas.width;
     let y=(lat/2048)*canvas.height;
-    let v=ctx.getImageData(x,y,1,1).data[0]/255;
-    return v*860-25;
+    let val=ctx.getImageData(x,y,1,1).data[0]/255;
+    return val*830-30;
 }
 
-// ================= VAR =================
-let busA=null,busB=null,drop=null;
-let linhaBus=null,linhaRota=null;
-let jumpMark=null,glideMark=null;
+// ===== VAR =====
+let busStart=null,busEnd=null;
+let modoOnibus=false;
 
-let setBus=false;
+let markers=[];
+let tooltips=[];
 
-// ================= CLICK =================
+// ===== CLICK =====
 map.on('click',e=>{
 
-    if(setBus){
-        if(!busA){
-            busA=[e.latlng.lat,e.latlng.lng];
-            L.marker(busA).addTo(map);
+    if(modoOnibus){
+        if(!busStart){
+            busStart=[e.latlng.lat,e.latlng.lng];
+            markers.push(L.marker(busStart).addTo(map));
         }else{
-            busB=[e.latlng.lat,e.latlng.lng];
-            L.marker(busB).addTo(map);
-
-            if(linhaBus) map.removeLayer(linhaBus);
-            linhaBus=L.polyline([busA,busB],{color:'cyan'}).addTo(map);
-
-            setBus=false;
+            busEnd=[e.latlng.lat,e.latlng.lng];
+            markers.push(L.marker(busEnd).addTo(map));
+            L.polyline([busStart,busEnd],{color:'cyan'}).addTo(map);
+            modoOnibus=false;
         }
         return;
     }
 
-    drop=e.latlng;
-    L.marker(drop).addTo(map);
-
-    calcular();
+    calcular(e.latlng);
 });
 
-// ================= CONTROLES =================
-function modoBus(){
-    setBus=true;
-    busA=null;busB=null;
-}
-
+// ===== RESET =====
 function resetar(){
     location.reload();
 }
 
-// ================= FÍSICA AVANÇADA =================
-function simular(p){
-
-    let dx=drop.lat-p.lat;
-    let dy=drop.lng-p.lng;
-
-    let distTotal=Math.sqrt(dx*dx+dy*dy);
-    let dirX=dx/distTotal;
-    let dirY=dy/distTotal;
-
-    let t=0,dt=0.016;
-    let dist=0;
-
-    let vel=0;
-    let velY=0;
-
-    let glide=false;
-    let glidePos=null;
-
-    while(true){
-
-        let lat=p.lat+dirX*dist;
-        let lng=p.lng+dirY*dist;
-
-        let hTerreno=terreno(lat,lng);
-
-        // queda acumulada realista
-        velY += 27 * dt;
-        let altura = 820 - velY * t;
-
-        let rel=altura-hTerreno;
-
-        // transição suave glide
-        if(!glide && rel<260){
-            glide=true;
-            glidePos={lat,lng};
-        }
-
-        let alvo;
-
-        if(!glide){
-            alvo = 38;
-        }else{
-            // desaceleração progressiva
-            alvo = 26 + Math.sin(t)*1.2;
-        }
-
-        vel += (alvo-vel)*0.09;
-
-        dist += vel * dt;
-
-        if(altura<=hTerreno){
-            return {final:{lat,lng},glide:glidePos};
-        }
-
-        if(t>120){
-            return {final:drop,glide:glidePos};
-        }
-
-        t+=dt;
-    }
-}
-
-// ================= DIST =================
+// ===== DIST =====
 function dist(a,b){
     let dx=a.lat-b.lat;
     let dy=a.lng-b.lng;
     return Math.sqrt(dx*dx+dy*dy);
 }
 
-// ================= SOLVER PROFISSIONAL =================
-function melhorPonto(){
+// ===== FÍSICA =====
+function simular(p,drop){
 
-    let melhor=null,erroMin=999999,melhorGlide=null;
+    let dx=drop.lat-p.lat;
+    let dy=drop.lng-p.lng;
 
-    let ranges=[1,0.2,0.05,0.01,0.002];
+    let total=Math.sqrt(dx*dx+dy*dy);
 
-    let center=0.5;
+    let dirX=dx/total;
+    let dirY=dy/total;
 
-    ranges.forEach(r=>{
+    let t=0,dt=0.016;
 
-        for(let i=center-r;i<=center+r;i+=r/10){
+    let distPerc=0;
+    let velH=0,velV=0;
 
-            if(i<0||i>1) continue;
+    let glide=false,glidePoint=null;
 
-            let lat=busA[0]+(busB[0]-busA[0])*i;
-            let lng=busA[1]+(busB[1]-busA[1])*i;
+    while(true){
 
-            let sim=simular({lat,lng});
-            let erro=dist(sim.final,drop);
+        let lat=p.lat+dirX*distPerc;
+        let lng=p.lng+dirY*distPerc;
 
-            if(erro<erroMin){
-                erroMin=erro;
-                melhor={lat,lng};
-                melhorGlide=sim.glide;
-                center=i;
-            }
+        let terreno=getTerreno(lat,lng);
+
+        velV+=32*dt;
+
+        let progress=distPerc/total;
+
+        let angulo= progress<0.3?70:(progress<0.7?45:20);
+        let rad=angulo*Math.PI/180;
+
+        let targetH=glide?28:(Math.sin(rad)*60);
+
+        velH+=(targetH-velH)*(glide?0.08:0.12);
+
+        let altura=800 - velV*t;
+        let rel=altura-terreno;
+
+        if(!glide && (rel<300 || velV>55)){
+            glide=true;
+            glidePoint={lat,lng};
         }
-    });
 
-    return {jump:melhor,glide:melhorGlide};
+        distPerc+=velH*dt;
+
+        if(altura<=terreno){
+            return {final:{lat,lng},glide:glidePoint};
+        }
+
+        if(t>120) return {final:drop,glide:glidePoint};
+
+        t+=dt;
+    }
 }
 
-// ================= CALC =================
-function calcular(){
+// ===== SOLVER PROFISSIONAL =====
+function melhorPulo(drop,a,b){
 
-    if(!busA||!busB||!drop) return;
-
-    [linhaRota,jumpMark,glideMark].forEach(x=>{
-        if(x) map.removeLayer(x);
-    });
-
-    let best=melhorPonto();
-
-    linhaRota=L.polyline([best.jump,drop],{
-        color:'#00e0ff',
-        dashArray:'10,10'
-    }).addTo(map);
-
-    jumpMark=L.circleMarker(best.jump,{
-        radius:8,color:'red',fillColor:'red',fillOpacity:1
-    }).addTo(map);
-
-    if(best.glide){
-        glideMark=L.circleMarker(best.glide,{
-            radius:8,color:'lime',fillColor:'lime',fillOpacity:1
-        }).addTo(map);
+    function ponto(t){
+        return {
+            lat:a[0]+(b[0]-a[0])*t,
+            lng:a[1]+(b[1]-a[1])*t
+        };
     }
 
-    let final=simular(best.jump).final;
-    console.log("ERRO REAL:",dist(final,drop));
+    let left=0,right=1;
+
+    let best=null;
+    let bestErr=999999;
+    let bestGlide=null;
+
+    for(let i=0;i<30;i++){
+
+        let t1=left+(right-left)/3;
+        let t2=right-(right-left)/3;
+
+        let p1=ponto(t1);
+        let p2=ponto(t2);
+
+        let s1=simular(p1,drop);
+        let s2=simular(p2,drop);
+
+        let e1=dist(s1.final,drop);
+        let e2=dist(s2.final,drop);
+
+        if(e1<bestErr){
+            bestErr=e1;
+            best=p1;
+            bestGlide=s1.glide;
+        }
+
+        if(e2<bestErr){
+            bestErr=e2;
+            best=p2;
+            bestGlide=s2.glide;
+        }
+
+        if(e1<e2){
+            right=t2;
+        }else{
+            left=t1;
+        }
+    }
+
+    return {pulo:best,glide:bestGlide,erro:bestErr};
+}
+
+// ===== LIMPAR =====
+function limpar(){
+    markers.forEach(m=>map.removeLayer(m));
+    tooltips.forEach(t=>map.removeLayer(t));
+    markers=[];
+    tooltips=[];
+}
+
+// ===== CALC =====
+function calcular(drop){
+
+    if(!busStart||!busEnd) return;
+
+    limpar();
+
+    let res=melhorPulo(drop,busStart,busEnd);
+
+    let p=res.pulo;
+    let g=res.glide;
+
+    markers.push(L.circleMarker([p.lat,p.lng],{color:'red'}).addTo(map));
+    markers.push(L.circleMarker([g.lat,g.lng],{color:'lime'}).addTo(map));
+    markers.push(L.circleMarker([drop.lat,drop.lng],{color:'blue'}).addTo(map));
+
+    tooltips.push(
+        L.tooltip({permanent:true})
+        .setContent("Jump")
+        .setLatLng([p.lat,p.lng])
+        .addTo(map)
+    );
+
+    tooltips.push(
+        L.tooltip({permanent:true})
+        .setContent("Glide")
+        .setLatLng([g.lat,g.lng])
+        .addTo(map)
+    );
+
+    document.getElementById("dist").innerText =
+        "Erro: "+res.erro.toFixed(1)+"m";
 }
 
 </script>
