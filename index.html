@@ -2,22 +2,17 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Drop Calc Pro (IA Nível 3)</title>
+<title>Drop Calc Pro (IA + Heatmap)</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{
-    margin:0;
-    font-family:Arial;
-    background:#0b0f1a;
-    color:white;
-}
+body{margin:0;background:#0b0f1a;color:white;font-family:Arial;}
+#map{height:100vh;}
 
 .topbar{
     position:absolute;
-    top:0;
-    width:100%;
+    top:0;width:100%;
     display:flex;
     justify-content:space-between;
     padding:10px 20px;
@@ -26,26 +21,11 @@ body{
 }
 
 button{
-    margin-left:10px;
-    padding:8px 14px;
+    padding:8px 12px;
     border:none;
     border-radius:8px;
-    background:linear-gradient(135deg,#00ffc3,#00aaff);
-    font-weight:bold;
+    background:#00ffc3;
     cursor:pointer;
-}
-
-#map{
-    height:100vh;
-}
-
-.info{
-    position:absolute;
-    bottom:20px;
-    left:20px;
-    background:rgba(0,0,0,0.5);
-    padding:15px;
-    border-radius:12px;
 }
 </style>
 </head>
@@ -53,27 +33,22 @@ button{
 <body>
 
 <div class="topbar">
-    <h2>🎯 Drop Calc Pro</h2>
+    <b>🎯 Drop Calc Pro</b>
     <div>
-        <button onclick="toggleBusMode()">Definir Ônibus</button>
+        <button onclick="modoBus()">Ônibus</button>
+        <button onclick="gerarHeatmap()">Heatmap</button>
         <button onclick="resetar()">Reset</button>
     </div>
 </div>
 
 <div id="map"></div>
 
-<div class="info">
-    <p>📍 <span id="coords">-</span></p>
-    <p>📏 <span id="dist">-</span></p>
-    <p>🧠 <span id="erro">-</span></p>
-</div>
-
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
 // ================= MAP =================
-let map = L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:2});
+let map=L.map('map',{crs:L.CRS.Simple,minZoom:-2,maxZoom:2});
 let bounds=[[0,0],[2048,2048]];
 L.imageOverlay("mapa.jpg",bounds).addTo(map);
 map.fitBounds(bounds);
@@ -93,281 +68,215 @@ img.onload=()=>{
     loaded=true;
 };
 
-function getTerreno(lat,lng){
+function alturaTerreno(lat,lng){
     if(!loaded) return 0;
-
-    let x=Math.floor((lng/2048)*canvas.width);
-    let y=Math.floor((lat/2048)*canvas.height);
-
-    let val=ctx.getImageData(x,y,1,1).data[0]/255;
-
-    return val * 830 - 30;
+    let x=(lng/2048)*canvas.width;
+    let y=(lat/2048)*canvas.height;
+    let v=ctx.getImageData(x,y,1,1).data[0]/255;
+    return v*850-20;
 }
 
-// ================= IA MEMÓRIA =================
-let memoriaIA = {};
-
-function getRegiao(lat,lng){
-    let size = 200;
-    let x = Math.floor(lat/size);
-    let y = Math.floor(lng/size);
-    return x+"_"+y;
-}
-
-function getConfigLocal(lat,lng){
-    let key = getRegiao(lat,lng);
-    return memoriaIA[key] || config;
-}
-
-function salvarConfig(lat,lng){
-    let key = getRegiao(lat,lng);
-    memoriaIA[key] = {...config};
-}
-
-// ================= STORAGE =================
-function salvarMemoria(){
-    localStorage.setItem("iaDrop", JSON.stringify(memoriaIA));
-}
-
-function carregarMemoria(){
-    let data = localStorage.getItem("iaDrop");
-    if(data){
-        memoriaIA = JSON.parse(data);
-    }
-}
-carregarMemoria();
-
-// ================= CONFIG =================
-let config = {
-    gravidade: 30,
-    velQueda: 35,
-    velGlide: 28,
-    alturaGlide: 270
+// ================= IA =================
+let IA={
+    gravidade:28,
+    velAr:36,
+    velGlide:27,
+    alturaGlide:260,
+    alturaInicial:820
 };
 
 // ================= VAR =================
-let busStart=null,busEnd=null,busLine=null;
-let markerDrop=null,puloMark=null,glideMark=null,finalMark=null;
+let busA=null,busB=null,drop=null;
+let linhaBus=null,linhaRota=null;
 
-let modoOnibus=false;
+let jumpMark=null,glideMark=null;
+let heatLayers=[];
+
+let setBus=false;
 
 // ================= CLICK =================
 map.on('click',e=>{
 
-    if(modoOnibus){
-
-        if(!busStart){
-            busStart=[e.latlng.lat,e.latlng.lng];
-            L.marker(busStart).addTo(map);
+    if(setBus){
+        if(!busA){
+            busA=[e.latlng.lat,e.latlng.lng];
+            L.marker(busA).addTo(map);
         }else{
-            busEnd=[e.latlng.lat,e.latlng.lng];
-            L.marker(busEnd).addTo(map);
+            busB=[e.latlng.lat,e.latlng.lng];
+            L.marker(busB).addTo(map);
 
-            if(busLine) map.removeLayer(busLine);
-            busLine=L.polyline([busStart,busEnd],{color:'cyan'}).addTo(map);
+            if(linhaBus) map.removeLayer(linhaBus);
+            linhaBus=L.polyline([busA,busB],{color:'cyan'}).addTo(map);
 
-            modoOnibus=false;
+            setBus=false;
         }
-
         return;
     }
 
-    setDrop(e.latlng);
+    drop=e.latlng;
+    L.marker(drop).addTo(map);
+
+    calcular();
 });
 
 // ================= CONTROLES =================
-function toggleBusMode(){
-    modoOnibus=true;
-    busStart=null;
-    busEnd=null;
-    if(busLine) map.removeLayer(busLine);
+function modoBus(){
+    setBus=true;
+    busA=null;busB=null;
 }
 
 function resetar(){
     location.reload();
 }
 
+// ================= SIMULAÇÃO =================
+function simular(p){
+
+    let dx=drop.lat-p.lat;
+    let dy=drop.lng-p.lng;
+
+    let distTotal=Math.sqrt(dx*dx+dy*dy);
+    let dirX=dx/distTotal;
+    let dirY=dy/distTotal;
+
+    let t=0,dt=0.016;
+    let dist=0,vel=0;
+
+    let glide=false;
+    let glidePos=null;
+
+    while(true){
+
+        let lat=p.lat+dirX*dist;
+        let lng=p.lng+dirY*dist;
+
+        let terreno=alturaTerreno(lat,lng);
+
+        let altura=IA.alturaInicial-(0.5*IA.gravidade*t*t);
+        let rel=altura-terreno;
+
+        if(!glide && rel<IA.alturaGlide){
+            glide=true;
+            glidePos={lat,lng};
+        }
+
+        let alvo=glide?IA.velGlide:IA.velAr;
+        vel+=(alvo-vel)*0.06;
+
+        dist+=vel*dt;
+
+        if(altura<=terreno){
+            return {final:{lat,lng},glide:glidePos};
+        }
+
+        if(t>120) return {final:drop,glide:glidePos};
+
+        t+=dt;
+    }
+}
+
 // ================= DIST =================
-function distancia(a,b){
+function dist(a,b){
     let dx=a.lat-b.lat;
     let dy=a.lng-b.lng;
     return Math.sqrt(dx*dx+dy*dy);
 }
 
-// ================= SIMULAÇÃO =================
-function simular(p, drop){
+// ================= IA BUSCA =================
+function melhorPonto(){
 
-    config = getConfigLocal(p.lat, p.lng);
-
-    let dx = drop.lat - p.lat;
-    let dy = drop.lng - p.lng;
-
-    let distTotal = Math.sqrt(dx*dx + dy*dy);
-
-    let dirX = dx / distTotal;
-    let dirY = dy / distTotal;
-
-    let t = 0, dt = 0.016;
-    let dist = 0, vel = 0;
-
-    let glide = false;
-    let glidePoint = null;
-
-    for(let i=0;i<10000;i++){
-
-        let lat = p.lat + dirX * dist;
-        let lng = p.lng + dirY * dist;
-
-        if(isNaN(lat)||isNaN(lng)) break;
-
-        let terreno = getTerreno(lat,lng);
-        let altura = 800 - (0.5 * config.gravidade * t * t);
-        let rel = altura - terreno;
-
-        if(!glide && rel <= config.alturaGlide){
-            glide=true;
-            glidePoint={lat,lng};
-        }
-
-        if(!glide){
-            vel += (config.velQueda - vel)*0.08;
-        }else{
-            vel += (config.velGlide - vel)*0.05;
-        }
-
-        dist += vel * dt;
-
-        if(altura <= terreno){
-            return {final:{lat,lng}, glide:glidePoint};
-        }
-
-        t+=dt;
-    }
-
-    return {final:drop, glide:glidePoint};
-}
-
-// ================= IA NÍVEL 3 =================
-function calibrarIA3(pulo, drop){
-
-    let melhorErro = distancia(simular(pulo, drop).final, drop);
-
-    let step = {
-        gravidade:2,
-        velQueda:2,
-        velGlide:2,
-        alturaGlide:20
-    };
-
-    for(let fase=0;fase<3;fase++){
-
-        for(let i=0;i<25;i++){
-
-            let teste={...config};
-
-            teste.gravidade += (Math.random()-0.5)*step.gravidade;
-            teste.velQueda += (Math.random()-0.5)*step.velQueda;
-            teste.velGlide += (Math.random()-0.5)*step.velGlide;
-            teste.alturaGlide += (Math.random()-0.5)*step.alturaGlide;
-
-            let backup={...config};
-            config=teste;
-
-            let sim=simular(pulo,drop);
-            let erro=distancia(sim.final,drop);
-
-            if(erro<melhorErro){
-                melhorErro=erro;
-            }else{
-                config=backup;
-            }
-        }
-
-        step.gravidade*=0.5;
-        step.velQueda*=0.5;
-        step.velGlide*=0.5;
-        step.alturaGlide*=0.5;
-    }
-
-    salvarConfig(drop.lat,drop.lng);
-    salvarMemoria();
-
-    document.getElementById("erro").innerText = melhorErro.toFixed(2)+" m";
-}
-
-// ================= MELHOR PULO =================
-function melhorPulo(drop,a,b){
-
-    let best=null,err=999999;
+    let melhor=null,erroMin=999999,melhorGlide=null;
 
     for(let i=0;i<=1;i+=0.02){
 
-        let lat=a[0]+(b[0]-a[0])*i;
-        let lng=a[1]+(b[1]-a[1])*i;
+        let lat=busA[0]+(busB[0]-busA[0])*i;
+        let lng=busA[1]+(busB[1]-busA[1])*i;
 
-        let sim=simular({lat,lng},drop);
+        let sim=simular({lat,lng});
+        let erro=dist(sim.final,drop);
 
-        let e=distancia(sim.final,drop);
-
-        if(e<err){
-            err=e;
-            best={lat,lng};
+        if(erro<erroMin){
+            erroMin=erro;
+            melhor={lat,lng};
+            melhorGlide=sim.glide;
         }
     }
 
-    return best;
+    // refinamento
+    for(let i=-0.02;i<=0.02;i+=0.002){
+
+        let lat=melhor.lat+(busB[0]-busA[0])*i;
+        let lng=melhor.lng+(busB[1]-busA[1])*i;
+
+        let sim=simular({lat,lng});
+        let erro=dist(sim.final,drop);
+
+        if(erro<erroMin){
+            erroMin=erro;
+            melhor={lat,lng};
+            melhorGlide=sim.glide;
+        }
+    }
+
+    return {jump:melhor,glide:melhorGlide};
 }
 
-// ================= DRAW =================
-function setDrop(p){
-    if(markerDrop) map.removeLayer(markerDrop);
-    markerDrop=L.marker(p).addTo(map);
+// ================= CALC =================
+function calcular(){
 
-    draw(p);
-}
+    if(!busA||!busB||!drop) return;
 
-function draw(drop){
-
-    if(!busStart||!busEnd) return;
-
-    let pulo=melhorPulo(drop,busStart,busEnd);
-
-    calibrarIA3(pulo,drop);
-
-    let sim=simular(pulo,drop);
-
-    let glide=sim.glide;
-    let final=sim.final;
-
-    if(puloMark) map.removeLayer(puloMark);
+    if(linhaRota) map.removeLayer(linhaRota);
+    if(jumpMark) map.removeLayer(jumpMark);
     if(glideMark) map.removeLayer(glideMark);
-    if(finalMark) map.removeLayer(finalMark);
 
-    map.eachLayer(l=>{
-        if(l instanceof L.Tooltip) map.removeLayer(l);
-    });
+    let best=melhorPonto();
 
-    puloMark=L.circleMarker([pulo.lat,pulo.lng],{color:'red'}).addTo(map);
-    finalMark=L.circleMarker([final.lat,final.lng],{color:'blue'}).addTo(map);
+    linhaRota=L.polyline([best.jump,drop],{
+        color:'#00e0ff',
+        dashArray:'10,10'
+    }).addTo(map);
 
-    if(glide){
-        glideMark=L.circleMarker([glide.lat,glide.lng],{color:'lime'}).addTo(map);
+    jumpMark=L.circleMarker(best.jump,{radius:7,color:'red'}).addTo(map);
+
+    if(best.glide){
+        glideMark=L.circleMarker(best.glide,{radius:7,color:'lime'}).addTo(map);
     }
+}
 
-    L.tooltip({permanent:true}).setContent("Jump").setLatLng(pulo).addTo(map);
+// ================= HEATMAP =================
+function gerarHeatmap(){
 
-    if(glide){
-        L.tooltip({permanent:true}).setContent("Glide").setLatLng(glide).addTo(map);
+    if(!busA||!busB||!drop) return;
+
+    // limpa antigo
+    heatLayers.forEach(l=>map.removeLayer(l));
+    heatLayers=[];
+
+    for(let i=0;i<=1;i+=0.05){
+
+        let lat=busA[0]+(busB[0]-busA[0])*i;
+        let lng=busA[1]+(busB[1]-busA[1])*i;
+
+        let sim=simular({lat,lng});
+        let erro=dist(sim.final,drop);
+
+        let cor;
+
+        if(erro<20) cor="red";
+        else if(erro<60) cor="yellow";
+        else cor="blue";
+
+        let c=L.circleMarker([lat,lng],{
+            radius:6,
+            color:cor,
+            fillOpacity:0.7
+        }).addTo(map);
+
+        heatLayers.push(c);
     }
-
-    document.getElementById("coords").innerText =
-        `${drop.lat.toFixed(0)}, ${drop.lng.toFixed(0)}`;
-
-    document.getElementById("dist").innerText =
-        distancia(drop,final).toFixed(0)+" m";
 }
 
 </script>
-
 </body>
 </html>
